@@ -100,7 +100,7 @@ const bindings: Binding[] = [
         .closest('li')
         .toggleClass('done', (box as HTMLInputElement).checked),
   ],
-  ['click', null, () => Plan.all('.todoapp').addClass('touched')],
+  ['click', null, (_e, el) => Plan.from(el).addClass('touched')],
 ]
 
 Plan.all('.todoapp').on(bindings).run(document)
@@ -109,7 +109,7 @@ Plan.all('.todoapp').on(bindings).run(document)
 Plan.all('.todoapp').off(bindings).run(document)
 ```
 
-A plan with `on` that runs twice binds twice. Run it once, or call `off` first.
+A plan with `on` that runs twice binds twice. Run it once, or call `off` first. To call `off` later, keep the bound element, so that a removed or changed element is not missed. There is no binding on `document` or `window`: use `Plan.from(document.documentElement)`, or the native API inside `tap`.
 
 ### Asynchronous work
 

@@ -83,19 +83,19 @@ If the request starts in the handler and the promise is already settled, the res
 Plan.all('.todoapp')
   .on([
     ['click', '.delete', (_e, btn) => Plan.from(btn).closest('li').remove()], // delegated
-    ['click', null, () => Plan.all('.todoapp').addClass('touched')], // direct, on .todoapp itself
+    ['click', null, (_e, el) => Plan.from(el).addClass('touched')], // direct, on .todoapp itself
   ])
   .run(document)
 ```
 
 - A plan with `on` that runs twice binds twice. Run it once, or call `off` first.
-- `on(bindings, { signal })` binds until the signal aborts.
-
+- To call `off` later, keep the bound element (`Plan.from(el).off(...)`). A selector that runs again can miss an element that was removed or changed.
 - A delegated binding never matches the element that it is bound on. To handle events on that element, use a direct binding: the selector `null`.
 - Handlers for inner elements run first. `stopPropagation()` stops the outer levels.
 - `stopImmediatePropagation()` does not stop other handlers at the same level.
-- `focus`, `blur`, `mouseenter`, `mouseleave`, `pointerenter`, and `pointerleave` are delegated with the events that bubble. The handler gets the native event, so `e.type` is, for example, `focusin`.
-- `e.currentTarget` is the root only while the handler runs. If a `tap` needs the root, store it in a `const` in the handler.
+- In a delegated binding, `focus`, `blur`, `mouseenter`, `mouseleave`, `pointerenter`, and `pointerleave` use the events that bubble. The handler gets the native event, so `e.type` is, for example, `focusin`. A direct binding uses its own event type.
+- There is no binding on `document` or `window`. Use `Plan.from(document.documentElement)`, or the native API inside `tap`.
+- `e.currentTarget` is the bound element only while the handler runs. If a `tap` needs it, store it in a `const` in the handler, or use the `el` of a direct binding.
 - The plans that handlers return run after all handlers of the event are called. A later handler does not see the DOM change of an earlier handler. In jQuery, it does.
 - If a handler throws, the remaining handlers of that event are not called.
 - A handler cannot return `false` (TypeScript rejects it). To stop the default action, call `e.preventDefault()`.

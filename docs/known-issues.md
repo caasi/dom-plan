@@ -15,12 +15,13 @@ These limits are intentional. They follow from the core idea.
 - **`stopImmediatePropagation` does not stop other handlers at the same level (D17).**
 - **A delegated binding never matches the element that it is bound on (D11).** Use a direct binding (selector `null`) for that element.
 - **A plan with `on` that runs twice binds twice (D28).** A plan is a query, so its effects repeat. Run it once, or call `off` first.
+- **No binding on `document` or `window` (D29).** Use `Plan.from(document.documentElement)`, or the native API inside `tap`.
 - **The library keeps one piece of state:** a `WeakMap` from each bound element to its bindings, so that `off` can remove them (D28).
 
 ## Open questions
 
 1. **Errors.** An invalid selector in a plan throws at `run`. The rest of the plan does not run. An error that a microtask throws has no stack that points to the code that built the chain. If a handler throws, the remaining handlers of that event are not called.
-2. **Passive listeners.** If the root is `document` or `body`, a browser can treat `touchstart`, `wheel`, and similar events as passive. Then `preventDefault()` in a handler has no effect. The list of these events is not confirmed.
+2. **Passive listeners.** If the bound element is `html` or `body`, a browser can treat `touchstart`, `wheel`, and similar events as passive. Then `preventDefault()` in a handler has no effect. The list of these events is not confirmed.
 3. **The `Element` type.** `run(document)[0].value` needs a cast to `HTMLInputElement`. No generic type parameter is planned.
 4. **Order of nodes in different trees.** `docOrder` uses `compareDocumentPosition`. For nodes in different trees, the order depends on the implementation. Transitivity across three or more trees is not confirmed. This affects held sets that mix nodes in the document with detached nodes, which `create`, `from`, `flatMap`, and `closest` can bring in.
 
@@ -29,7 +30,7 @@ These limits are intentional. They follow from the core idea.
 - **The cost of `uniqSorted`.** Each select step deduplicates and sorts. The cost on large documents is not measured.
 - **Contrast in the examples.** The title of the weather example is light text on blue (`#4d7cff`). The estimate is about 4:1, which is enough for large text. No tool measured it.
 - **Browsers other than Chromium.** The browser checks run only in Chromium (Playwright). Firefox and Safari are not tested.
-- **jsdom features.** Some unit checks depend on jsdom behavior: `cancelBubble` after `stopPropagation`, the `signal` option of `addEventListener`, and the canceled activation of a checkbox. They pass with the jsdom version in `package-lock.json`.
+- **jsdom features.** Some unit checks depend on jsdom behavior: `cancelBubble` after `stopPropagation`, shadow DOM with slots, and the canceled activation of a checkbox. They pass with the jsdom version in `package-lock.json`.
 
 ## Test environment
 
