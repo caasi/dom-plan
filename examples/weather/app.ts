@@ -57,6 +57,4 @@ const submit: Handler = (e, form) => {
     })
 }
 
-Plan.all('#app')
-  .on([['submit', 'form', submit]])
-  .run(document)
+Plan.all('#app').on('submit', 'form', submit).run(document)

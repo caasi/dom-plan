@@ -18,11 +18,14 @@ for (const k of [
   g[k] = (dom.window as any)[k]
 
 const { Plan } = await import('../src/index.ts')
-type Binding = import('../src/index.ts').Binding
+type Handler = import('../src/index.ts').Handler
+type Binding = readonly [event: string, selector: string | null, handler: Handler]
 
 // Binds through on(), and returns an unbind that goes through off().
 const bindOn = (host: Element, bindings: readonly Binding[]) => {
-  Plan.from(host).on(bindings).run(host)
+  bindings
+    .reduce((p, [t, css, h]) => (css === null ? p.on(t, h) : p.on(t, css, h)), Plan.from(host))
+    .run(host)
   return () => void Plan.from(host).off().run(host)
 }
 
@@ -394,7 +397,7 @@ test('R27 void return schedules nothing; off removes all; bad selector throws at
   off()
   click($('p'))
   assert.equal(n, 1)
-  const plan = Plan.from(root).on([['click', '> p', () => {}]])
+  const plan = Plan.from(root).on('click', '> p', () => {})
   assert.throws(
     () => plan.run(root),
     (err: any) => err.name === 'SyntaxError',
@@ -421,7 +424,7 @@ test('R32 synthetic dispatch, two bindings on one host: both handlers before any
 test('R36 on is lazy: nothing is bound before run', () => {
   const root = fixture('<p></p>')
   let n = 0
-  const plan = Plan.from(root).on([['click', 'p', () => void n++]])
+  const plan = Plan.from(root).on('click', 'p', () => void n++)
   click($('p'))
   assert.equal(n, 0)
   plan.run(root)
@@ -430,20 +433,13 @@ test('R36 on is lazy: nothing is bound before run', () => {
   Plan.from(root).off().run(root)
 })
 
-test('R37 off(bindings) removes only the equal bindings', () => {
+test('R37 off with event, selector and handler removes only that binding', () => {
   const root = fixture('<p></p>')
   const log: string[] = []
   const a = () => void log.push('a')
   const b = () => void log.push('b')
-  Plan.from(root)
-    .on([
-      ['click', 'p', a],
-      ['click', 'p', b],
-    ])
-    .run(root)
-  Plan.from(root)
-    .off([['click', 'p', a]])
-    .run(root)
+  Plan.from(root).on('click', 'p', a).on('click', 'p', b).run(root)
+  Plan.from(root).off('click', 'p', a).run(root)
   click($('p'))
   assert.deepEqual(log, ['b'])
   Plan.from(root).off().run(root)
@@ -453,14 +449,12 @@ test('R38 running on twice binds twice; off removes both', () => {
   const root = fixture('<p></p>')
   let n = 0
   const h = () => void n++
-  const plan = Plan.from(root).on([['click', 'p', h]])
+  const plan = Plan.from(root).on('click', 'p', h)
   plan.run(root)
   plan.run(root)
   click($('p'))
   assert.equal(n, 2)
-  Plan.from(root)
-    .off([['click', 'p', h]])
-    .run(root)
+  Plan.from(root).off('click', 'p', h).run(root)
   click($('p'))
   assert.equal(n, 2)
 })
@@ -468,7 +462,7 @@ test('R38 running on twice binds twice; off removes both', () => {
 test('R40 on binds on each held element; a handler plan runs with that element as root', async () => {
   const root = fixture('<ul id=a><li></li></ul><ul id=b><li></li></ul>')
   Plan.all('ul')
-    .on([['click', 'li', () => Plan.all('li').addClass('hit')]])
+    .on('click', 'li', () => Plan.all('li').addClass('hit'))
     .run(root)
   click($('#a li'))
   await tick()
@@ -514,16 +508,16 @@ test('R43 the click filters apply to delegated bindings only, as in jQuery', () 
   off()
 })
 
-test('R44 a bad selector throws before any binding of that element is bound', () => {
+test('R44 a bad selector throws at run and is not bound; earlier steps stay, as in R13', () => {
   const root = fixture('<p></p>')
   let n = 0
-  const plan = Plan.from(root).on([
-    ['click', 'p', () => void n++],
-    ['click', '> p', () => {}],
-  ])
+  const plan = Plan.from(root)
+    .on('click', 'p', () => void n++)
+    .on('click', '> p', () => {})
   assert.throws(() => plan.run(root))
   click($('p'))
-  assert.equal(n, 0)
+  assert.equal(n, 1, 'the first on ran before the second threw')
+  Plan.from(root).off().run(root)
 })
 
 test('R45 delegation stops at the bound element: an ancestor outside it never matches', () => {
@@ -542,18 +536,12 @@ test('R46 off during a dispatch applies to the next event, not to this one', () 
   const log: string[] = []
   const second = () => void log.push('second')
   Plan.from(root)
-    .on([
-      [
-        'click',
-        'p',
-        () =>
-          void (log.push('first'),
-          Plan.from(root)
-            .off([['click', 'p', second]])
-            .run(root)),
-      ],
-      ['click', 'p', second],
-    ])
+    .on(
+      'click',
+      'p',
+      () => void (log.push('first'), Plan.from(root).off('click', 'p', second).run(root)),
+    )
+    .on('click', 'p', second)
     .run(root)
   click($('p'))
   click($('p'))
@@ -561,15 +549,35 @@ test('R46 off during a dispatch applies to the next event, not to this one', () 
   Plan.from(root).off().run(root)
 })
 
-test('R47 on copies its bindings when the plan is built (D2)', () => {
-  const root = fixture('<p></p>')
+test('R47 off by event, by selector, and by handler, like jQuery', () => {
+  const root = fixture('<p><i></i></p>')
   const log: string[] = []
-  const bindings: Binding[] = [['click', 'p', () => void log.push('original')]]
-  const plan = Plan.from(root).on(bindings)
-  bindings[0] = ['click', 'p', () => void log.push('replaced')]
-  plan.run(root)
-  click($('p'))
-  assert.deepEqual(log, ['original'])
+  const h = () => void log.push('h')
+  const reset = () => {
+    Plan.from(root).off().run(root)
+    Plan.from(root)
+      .on('click', 'p', () => void log.push('p'))
+      .on('click', 'i', h)
+      .on('click', () => void log.push('direct'))
+      .on('keydown', 'p', () => void log.push('key'))
+      .run(root)
+    log.length = 0
+  }
+  reset()
+  Plan.from(root).off('click').run(root)
+  click($('i'))
+  assert.deepEqual(log, [], 'off(event) removes delegated and direct bindings of that event')
+  $('p').dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true }))
+  assert.deepEqual(log, ['key'], 'off(event) keeps the bindings of another event')
+  log.length = 0
+  reset()
+  Plan.from(root).off('click', 'p').run(root)
+  click($('i'))
+  assert.deepEqual(log, ['h', 'direct'], 'off(event, selector)')
+  reset()
+  Plan.from(root).off('click', h).run(root)
+  click($('i'))
+  assert.deepEqual(log, ['p', 'direct'], 'off(event, handler) matches any selector')
   Plan.from(root).off().run(root)
 })
 
@@ -578,14 +586,10 @@ test('R48 off of one event type keeps the bindings of another type', () => {
   const log: string[] = []
   const onClick = () => void log.push('click')
   Plan.from(root)
-    .on([
-      ['click', 'p', onClick],
-      ['keydown', 'p', () => void log.push('keydown')],
-    ])
+    .on('click', 'p', onClick)
+    .on('keydown', 'p', () => void log.push('keydown'))
     .run(root)
-  Plan.from(root)
-    .off([['click', 'p', onClick]])
-    .run(root)
+  Plan.from(root).off('click', 'p', onClick).run(root)
   click($('p'))
   $('p').dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true }))
   assert.deepEqual(log, ['keydown'])
@@ -611,10 +615,8 @@ test('R50 shadow DOM: the walk stops when it leaves the bound element through a 
   const inner = shadow.querySelector('.inner')!
   const log: string[] = []
   Plan.from(inner)
-    .on([
-      ['click', 'section', () => void log.push('section outside')],
-      ['click', null, () => void log.push('direct')],
-    ])
+    .on('click', 'section', () => void log.push('section outside'))
+    .on('click', () => void log.push('direct'))
     .run(shadow)
   click($('p'))
   assert.deepEqual(log, ['direct'])
@@ -633,3 +635,66 @@ test('R51 a listener calls only the bindings of its own event type', () => {
   assert.deepEqual(log, ['click'])
   off()
 })
+
+test('R52 off(event, handler) removes a direct binding', () => {
+  const root = fixture('<p></p>')
+  let n = 0
+  const h = () => void n++
+  Plan.from(root).on('click', h).run(root)
+  Plan.from(root).off('click', h).run(root)
+  click($('p'))
+  assert.equal(n, 0)
+})
+
+test('R53 off(event, handler) keeps the same handler bound to another event', () => {
+  const root = fixture('<p></p>')
+  const log: string[] = []
+  const h = (e: Event) => void log.push(e.type)
+  Plan.from(root).on('click', 'p', h).on('keydown', 'p', h).run(root)
+  Plan.from(root).off('click', h).run(root)
+  click($('p'))
+  $('p').dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true }))
+  assert.deepEqual(log, ['keydown'])
+  Plan.from(root).off().run(root)
+})
+
+test('R54 off(event, selector, handler) keeps the handler bound under another selector', () => {
+  const root = fixture('<p><i></i></p>')
+  let n = 0
+  const h = () => void n++
+  Plan.from(root).on('click', 'i', h).run(root)
+  Plan.from(root).off('click', 'p', h).run(root)
+  click($('i'))
+  assert.equal(n, 1)
+  Plan.from(root).off().run(root)
+})
+
+test('R55 off(focus) keeps delegated focusin bindings (off matches the declared event)', () => {
+  const root = fixture('<p></p>')
+  const log: string[] = []
+  Plan.from(root)
+    .on('focusin', 'p', () => void log.push('focusin'))
+    .on('focus', 'p', () => void log.push('focus'))
+    .run(root)
+  Plan.from(root).off('focus').run(root)
+  $('p').dispatchEvent(new window.FocusEvent('focusin', { bubbles: true }))
+  assert.deepEqual(log, ['focusin'])
+  Plan.from(root).off().run(root)
+})
+
+// Type checks, never called. If an overload starts to accept one of these calls, tsc fails with an
+// unused @ts-expect-error. The TypeScript types are the contract of on and off (D31).
+void function overloadTypeChecks() {
+  const p = Plan.none
+  const h = () => {}
+  // @ts-expect-error a handler is required
+  p.on('click')
+  // @ts-expect-error a handler is required after a selector
+  p.on('click', 'p')
+  // @ts-expect-error null is not a selector (D31)
+  p.on('click', null, h)
+  // @ts-expect-error a missing argument is an omitted trailing argument
+  p.off(undefined, 'p')
+  // @ts-expect-error the second argument is a selector or a handler
+  p.off('click', 1)
+}
