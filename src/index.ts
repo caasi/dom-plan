@@ -33,8 +33,10 @@ function exec(steps: readonly Step[], root: ParentNode): Element[] {
  * A lazy plan of DOM work: select elements, describe effects, or build new elements.
  *
  * - Every method returns a new Plan. Nothing touches the DOM until `run(root)`.
- * - Select steps (`find`, `filter`, `closest`, `first`, `add`) start from the elements the
- *   previous step held, like jQuery's chain. Effects act on the elements the current step holds.
+ * - A plan is a sequence of steps. The only value it carries is the held set of elements.
+ *   Select steps (`flatMap`, `find`, `filter`, `closest`, `first`, `add`) start from the set that
+ *   the previous step held, like jQuery's chain, and read the live DOM. Effects act on the current
+ *   set, so a later select step sees their changes.
  * - `end()` goes back to the previous set (jQuery `.end`). `also(next)` runs another plan after
  *   this one.
  * - A Plan is a query, not a result: calling `run` twice selects again and repeats the effects.
@@ -53,8 +55,8 @@ export class Plan {
   /** Starts from `root.querySelectorAll(css)` at run time. */
   static all = (css: string) => new Plan([{ k: 'q', f: (_, r) => [...r.querySelectorAll(css)] }])
 
-  /** Starts from `el`, only when `el` is inside the root given to `run`. */
-  static from = (el: Element) => new Plan([{ k: 'q', f: (_, r) => (r.contains(el) ? [el] : []) }])
+  /** Starts from `el`, wherever it is. This is the `return` of the selection monad. */
+  static from = (el: Element) => new Plan([{ k: 'q', f: () => [el] }])
 
   /** Starts from a new, detached element. Each `run` creates a new one. */
   static create = (tag: string) =>
@@ -94,8 +96,9 @@ export class Plan {
 
   /**
    * Runs `next` after this plan, in the same `run`, and returns `next`'s elements. Every Plan
-   * begins with a starting point (the constructor is private), so `next` never continues from
-   * this plan's set. jQuery needs no such operator because it runs each line at once.
+   * begins with a starting point (the constructor is private), so `next` does not start from this
+   * plan's set. The steps are concatenated, so an `end()` after `also` can go back into this plan.
+   * jQuery needs no such operator because it runs each line at once.
    */
   also(next: Plan) {
     return new Plan([...this.steps, ...next.steps])
