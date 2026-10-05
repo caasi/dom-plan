@@ -5,20 +5,14 @@ const log: string[] = ((window as any).log = [])
 const root = document.getElementById('root')!
 
 Plan.from(root)
-  .on([
-    ['focus', '.field', () => void log.push('focus:field')],
-    ['focusin', 'input', e => void log.push(`focusin:input type=${e.type}`)],
-    [
-      'click',
-      '#p',
-      e => {
-        const ct = e.currentTarget
-        return Plan.all('#p').tap(() =>
-          log.push(`tap currentTarget is root: ${e.currentTarget === root}, saved: ${ct === root}`),
-        )
-      },
-    ],
-  ])
+  .on('focus', '.field', () => void log.push('focus:field'))
+  .on('focusin', 'input', e => void log.push(`focusin:input type=${e.type}`))
+  .on('click', '#p', e => {
+    const ct = e.currentTarget
+    return Plan.all('#p').tap(() =>
+      log.push(`tap currentTarget is root: ${e.currentTarget === root}, saved: ${ct === root}`),
+    )
+  })
   .run(document)
 
 ;(window as any).focusFromTap = () => {

@@ -64,13 +64,11 @@ const endEdit: Handler = (e, input) => {
 }
 
 Plan.all('.todoapp')
-  .on([
-    ['submit', 'form.new', add],
-    ['change', '.toggle', toggle],
-    ['click', '.delete', remove],
-    ['click', '.filters button', filter],
-    ['dblclick', '.title', startEdit],
-    ['keydown', '.edit', endEdit],
-    ['blur', '.edit', endEdit],
-  ])
+  .on('submit', 'form.new', add)
+  .on('change', '.toggle', toggle)
+  .on('click', '.delete', remove)
+  .on('click', '.filters button', filter)
+  .on('dblclick', '.title', startEdit)
+  .on('keydown', '.edit', endEdit)
+  .on('blur', '.edit', endEdit)
   .run(document)

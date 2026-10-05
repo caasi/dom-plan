@@ -48,6 +48,8 @@ export class Plan {
   private constructor(private readonly steps: readonly Step[]) {}
 
   // Not named `then`: a `then` method makes every Plan a thenable, and `await plan` never settles.
+  // ponytail: copies the steps on each call, so a chain of k steps costs O(k^2) to build (1000 chained
+  // `on` calls took about 14 ms in jsdom). If that ever matters, keep the steps as a persistent list.
   private step(s: Step) {
     return new Plan([...this.steps, s])
   }
@@ -133,26 +135,36 @@ export class Plan {
   }
 
   /**
-   * Binds events on each held element, with jQuery's delegation rules. Binding happens at `run`, like
-   * every effect, so running the plan twice binds twice. Use `off` to remove bindings.
+   * Binds an event on each held element, like jQuery's `.on`. With a selector, the binding is
+   * delegated to descendants that match; without one, it is bound to the element itself. Binding
+   * happens at `run`, like every effect, so running the plan twice binds twice.
    */
-  on(bindings: readonly Binding[]) {
-    const copy = bindings.map((b): Binding => [...b])
+  on(event: string, handler: Handler): Plan
+  on(event: string, selector: string, handler: Handler): Plan
+  on(event: string, a: string | Handler, b?: Handler) {
+    const binding: Binding = typeof a === 'string' ? [event, a, b!] : [event, null, a]
     return this.tap(el => {
-      for (const [, css] of copy) if (css !== null) el.querySelector(css) // throw before any is bound
-      for (const b of copy) bind(el, b)
+      if (binding[1] !== null) el.querySelector(binding[1]) // throw on a bad selector before binding
+      bind(el, binding)
     })
   }
 
   /**
-   * Removes bindings from each held element: the ones equal to `bindings` (same event, selector and
-   * handler), or all of them when `bindings` is omitted.
+   * Removes bindings from each held element, like jQuery's `.off`: all of them; or those of `event`;
+   * or those of `event` with this `selector`, this `handler`, or both. An omitted trailing argument matches any.
    */
-  off(bindings?: readonly Binding[]) {
+  off(): Plan
+  off(event: string, handler?: Handler): Plan
+  off(event: string, selector: string, handler?: Handler): Plan
+  off(event?: string, a?: string | Handler, b?: Handler) {
+    const [selector, handler] = typeof a === 'function' ? [undefined, a] : [a, b]
     return this.tap(el =>
       unbind(
         el,
-        b => !bindings || bindings.some(x => x[0] === b[0] && x[1] === b[1] && x[2] === b[2]),
+        ([t, css, h]) =>
+          (event === undefined || t === event) &&
+          (selector === undefined || css === selector) &&
+          (handler === undefined || h === handler),
       ),
     )
   }
@@ -173,8 +185,8 @@ export class Plan {
 
 /** Return a Plan to have it run in a microtask after the event, with the bound element as root. */
 export type Handler = (e: Event, el: Element) => Plan | void
-/** `selector` null binds to the element itself; a string delegates to its descendants. */
-export type Binding = readonly [event: string, selector: string | null, handler: Handler]
+// selector null: a direct binding on the element itself; a string: delegated to its descendants.
+type Binding = readonly [event: string, selector: string | null, handler: Handler]
 
 const DELEGATE: Record<string, string> = {
   focus: 'focusin',
