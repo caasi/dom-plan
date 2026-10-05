@@ -465,22 +465,6 @@ test('R38 running on twice binds twice; off removes both', () => {
   assert.equal(n, 2)
 })
 
-test('R39 an aborted signal removes the bindings it came with', () => {
-  const root = fixture('<p></p>')
-  const log: string[] = []
-  const ac = new AbortController()
-  Plan.from(root)
-    .on([['click', 'p', () => void log.push('signal')]], { signal: ac.signal })
-    .run(root)
-  Plan.from(root)
-    .on([['click', 'p', () => void log.push('kept')]])
-    .run(root)
-  ac.abort()
-  click($('p'))
-  assert.deepEqual(log, ['kept'])
-  Plan.from(root).off().run(root)
-})
-
 test('R40 on binds on each held element; a handler plan runs with that element as root', async () => {
   const root = fixture('<ul id=a><li></li></ul><ul id=b><li></li></ul>')
   Plan.all('ul')
@@ -491,4 +475,149 @@ test('R40 on binds on each held element; a handler plan runs with that element a
   assert.equal($('#a li').className, 'hit')
   assert.equal($('#b li').className, '', 'the plan ran with #a as root')
   Plan.all('ul').off().run(root)
+})
+
+test('R41 the handler queue is built first: removing the target keeps outer and direct handlers', () => {
+  const root = fixture('<ul><li><b>x</b></li></ul>')
+  const log: string[] = []
+  const off = bindOn(root, [
+    ['click', 'li', (_e, el) => void (log.push('li'), el.remove())],
+    ['click', 'ul', () => void log.push('ul')],
+    ['click', null, () => void log.push('direct')],
+  ])
+  click($('b'))
+  assert.deepEqual(log, ['li', 'ul', 'direct'])
+  off()
+})
+
+test('R42 a direct focus binding uses the native focus: a focused descendant does not fire it', () => {
+  const root = fixture('<input>')
+  root.tabIndex = 0
+  const log: string[] = []
+  const off = bindOn(root, [['focus', null, e => void log.push(`direct ${e.type}`)]])
+  ;($('input') as HTMLInputElement).focus()
+  assert.deepEqual(log, [], 'descendant focus')
+  root.focus()
+  assert.deepEqual(log, ['direct focus'], 'host focus')
+  off()
+})
+
+test('R43 the click filters apply to delegated bindings only, as in jQuery', () => {
+  const root = fixture('<p></p>')
+  const log: string[] = []
+  const off = bindOn(root, [
+    ['click', 'p', () => void log.push('delegated')],
+    ['click', null, () => void log.push('direct')],
+  ])
+  click($('p'), { button: 2 })
+  assert.deepEqual(log, ['direct'])
+  off()
+})
+
+test('R44 a bad selector throws before any binding of that element is bound', () => {
+  const root = fixture('<p></p>')
+  let n = 0
+  const plan = Plan.from(root).on([
+    ['click', 'p', () => void n++],
+    ['click', '> p', () => {}],
+  ])
+  assert.throws(() => plan.run(root))
+  click($('p'))
+  assert.equal(n, 0)
+})
+
+test('R45 delegation stops at the bound element: an ancestor outside it never matches', () => {
+  const root = fixture('<div class=host><p></p></div>')
+  const log: string[] = []
+  const host = $('.host')
+  const off = bindOn(host, [['click', 'section', () => void log.push('section')]])
+  click($('p'))
+  assert.deepEqual(log, [])
+  off()
+  void root
+})
+
+test('R46 off during a dispatch applies to the next event, not to this one', () => {
+  const root = fixture('<p></p>')
+  const log: string[] = []
+  const second = () => void log.push('second')
+  Plan.from(root)
+    .on([
+      [
+        'click',
+        'p',
+        () =>
+          void (log.push('first'),
+          Plan.from(root)
+            .off([['click', 'p', second]])
+            .run(root)),
+      ],
+      ['click', 'p', second],
+    ])
+    .run(root)
+  click($('p'))
+  click($('p'))
+  assert.deepEqual(log, ['first', 'second', 'first'])
+  Plan.from(root).off().run(root)
+})
+
+test('R47 on copies its bindings when the plan is built (D2)', () => {
+  const root = fixture('<p></p>')
+  const log: string[] = []
+  const bindings: Binding[] = [['click', 'p', () => void log.push('original')]]
+  const plan = Plan.from(root).on(bindings)
+  bindings[0] = ['click', 'p', () => void log.push('replaced')]
+  plan.run(root)
+  click($('p'))
+  assert.deepEqual(log, ['original'])
+  Plan.from(root).off().run(root)
+})
+
+test('R48 off of one event type keeps the bindings of another type', () => {
+  const root = fixture('<p></p>')
+  const log: string[] = []
+  const onClick = () => void log.push('click')
+  Plan.from(root)
+    .on([
+      ['click', 'p', onClick],
+      ['keydown', 'p', () => void log.push('keydown')],
+    ])
+    .run(root)
+  Plan.from(root)
+    .off([['click', 'p', onClick]])
+    .run(root)
+  click($('p'))
+  $('p').dispatchEvent(new window.KeyboardEvent('keydown', { bubbles: true }))
+  assert.deepEqual(log, ['keydown'])
+  Plan.from(root).off().run(root)
+})
+
+test('R49 a direct mouseenter binding uses the native mouseenter', () => {
+  const root = fixture('<i></i>')
+  let n = 0
+  const off = bindOn(root, [['mouseenter', null, () => void n++]])
+  $('i').dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: null }))
+  assert.equal(n, 0, 'mouseover does not fire a direct mouseenter')
+  root.dispatchEvent(new MouseEvent('mouseenter'))
+  assert.equal(n, 1)
+  off()
+})
+
+test('R50 shadow DOM: the walk stops when it leaves the bound element through a slot', () => {
+  const root = fixture('<div id=sh><p>light</p></div>')
+  const sh = $('#sh')
+  const shadow = sh.attachShadow({ mode: 'open' })
+  shadow.innerHTML = '<div class=inner><slot></slot></div>'
+  const inner = shadow.querySelector('.inner')!
+  const log: string[] = []
+  Plan.from(inner)
+    .on([
+      ['click', 'section', () => void log.push('section outside')],
+      ['click', null, () => void log.push('direct')],
+    ])
+    .run(shadow)
+  click($('p'))
+  assert.deepEqual(log, ['direct'])
+  Plan.from(inner).off().run(shadow)
+  void root
 })
