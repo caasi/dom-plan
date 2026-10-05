@@ -13,7 +13,9 @@ These limits are intentional. They follow from the core idea.
 - **No effect-order composition (D26).** `also` concatenates steps in the written order. There is no scheduling, no interleaving, and no asynchronous ordering.
 - **`addClass('a b')` throws `InvalidCharacterError` (D24).** This is the native behavior of `DOMTokenList`.
 - **`stopImmediatePropagation` does not stop other handlers at the same level (D17).**
-- **The root of `mount` is never matched (D11),** and there is no direct binding.
+- **A delegated binding never matches the element that it is bound on (D11).** Use a direct binding (selector `null`) for that element.
+- **A plan with `on` that runs twice binds twice (D28).** A plan is a query, so its effects repeat. Run it once, or call `off` first.
+- **The library keeps one piece of state:** a `WeakMap` from each bound element to its bindings, so that `off` can remove them (D28).
 
 ## Open questions
 

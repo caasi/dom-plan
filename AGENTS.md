@@ -20,9 +20,9 @@ The design record is `docs/000-design.md`. Known limits are in `docs/known-issue
 ### Run the plan
 
 1. End each plan that must change the DOM with `.run(root)`.
-2. If a `mount` handler returns a plan, do not call `run` on it. `mount` runs it in a microtask, with the mount root as `root`.
+2. If a handler returns a plan, do not call `run` on it. The plan runs in a microtask, with the element that `on` bound as `root`.
 
-In a plan that a handler returns, `Plan.all` and `add` select only under the mount root. `Plan.all('#elsewhere')` outside the mount root selects nothing, and nothing reports it.
+In a plan that a handler returns, `Plan.all` and `add` select only under the bound element. `Plan.all('#elsewhere')` outside it selects nothing, and nothing reports it.
 
 3. Do not write `$(...)`. Start a plan with `Plan.all`, `Plan.from`, `Plan.create`, or `Plan.none`.
 
@@ -77,9 +77,21 @@ If the request starts in the handler and the promise is already settled, the res
 
 ### Events
 
-`mount(root, bindings)` delegates events with the rules of jQuery. It returns a function that removes the listeners.
+`plan.on(bindings)` binds events on each element that the plan holds, at `run`, with the rules of jQuery. `plan.off(bindings)` removes the equal bindings (same event, selector, and handler), and `plan.off()` removes all of them.
 
-- The root element itself is never matched.
+```ts
+Plan.all('.todoapp')
+  .on([
+    ['click', '.delete', (_e, btn) => Plan.from(btn).closest('li').remove()], // delegated
+    ['click', null, () => Plan.all('.todoapp').addClass('touched')], // direct, on .todoapp itself
+  ])
+  .run(document)
+```
+
+- A plan with `on` that runs twice binds twice. Run it once, or call `off` first.
+- `on(bindings, { signal })` binds until the signal aborts.
+
+- A delegated binding never matches the element that it is bound on. To handle events on that element, use a direct binding: the selector `null`.
 - Handlers for inner elements run first. `stopPropagation()` stops the outer levels.
 - `stopImmediatePropagation()` does not stop other handlers at the same level.
 - `focus`, `blur`, `mouseenter`, `mouseleave`, `pointerenter`, and `pointerleave` are delegated with the events that bubble. The handler gets the native event, so `e.type` is, for example, `focusin`.
