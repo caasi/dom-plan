@@ -26,4 +26,6 @@ Work that is planned but not done. Known limits and open questions are in `known
   - It brings back "the next step depends on the result". Evaluate it again together with D5 and D21.
   - References: `Effect.gen` (the smallest bundle of Effect v4 measured about 57 KB with gzip on 2026-10-05, too large to use), MobX `flow`, `pelotom/burrido`.
 
+- **Batch reads before writes (layout thrashing).** A common complaint about jQuery is that a chain mixes reads and writes, so the browser computes the layout again and again. The same selector is also queried again at each use. A plan is a complete array of steps before `run`, so `run` can see all reads and writes before it does any of them. jQuery runs each call at once and cannot do this. Today `exec` runs the steps in the written order, and a plan queries again at each `run`. This conflicts with D26 (no composition of effect order), so it needs a new decision first.
+
 - **A test with agents.** The name `Plan` was chosen so that agents remember to call `run` (D19). This is a claim about behavior. To test it, give agents a task that uses dom-plan, across model tiers, and count the plans that are never run.
