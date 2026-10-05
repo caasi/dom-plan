@@ -196,27 +196,9 @@ Taken from section 3 of the Fable v3 review.
 - If another listener on the root already called `stopPropagation`, dom-plan runs no handler. This is stricter than jQuery.
 - Binding selectors use `Element.matches`. A relative selector (`> li`) throws `SyntaxError` at `mount` (D2). `:scope` means the matched element.
 
-## 10. Open questions
+## 10. Open questions and later work
 
-1. **Elements that escape**: covered by D13. Not prevented. The user documentation must say so.
-2. **Errors**: an invalid selector in a plan throws at `run`, and the rest of the plan does not run. An error thrown in a microtask has no stack that points to the code that built the chain. Binding selectors are validated at `mount` (D2). If a handler throws, the remaining handlers of that event are not called (one listener loop; jQuery does the same).
-3. **Passive listeners**: if the root is `document` or `body`, a browser can treat `touchstart`, `wheel`, and similar events as passive. The list of these events was not confirmed.
-4. **The `Element` type**: `run(document)[0].value` needs a cast. The documentation must say so. No generic type parameter is planned.
-5. **`docOrder` for nodes in different trees**: the order depends on the implementation. Transitivity across three or more trees was not confirmed.
-
-## 10.5 Later (not part of the spike)
-
-- **Generator style (`Plan.gen`)**: `yield*` as do notation. At `run`, the steps execute in order, and the set of each step returns to the generator as one value.
-  ```ts
-  Plan.gen(function* () {
-    const items = yield* Plan.all('li.todo') // Element[]
-    yield* Plan.all('#count').setText(String(items.length))
-  }).run(document)
-  ```
-  - In the step model, the set of each step is one value. So the generator runs forward once, without the replay that burrido needs.
-  - `yield*` needs `[Symbol.iterator]` on `Plan`. That makes a plan iterable, so spread and `for...of` must not mislead users. This risk is of the same kind as the thenable problem of v3 #2.
-  - It brings back "the next step depends on the result" (the continuation that v2 removed). It must be evaluated again together with D5 and D21.
-  - References: `Effect.gen` (the smallest bundle of Effect v4 measured about 57 KB with gzip on 2026-10-05, too large to use), MobX `flow`, `pelotom/burrido`.
+The open questions are in `known-issues.md`. The planned work, with the generator style (`Plan.gen`), is in `todos.md`.
 
 ## 11. Spike
 
