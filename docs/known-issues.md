@@ -20,7 +20,7 @@ These limits are intentional. They follow from the core idea.
 
 ## Open questions
 
-1. **Errors.** An invalid selector in a plan throws at `run`. The rest of the plan does not run. An error that a microtask throws has no stack that points to the code that built the chain. If a handler throws, the remaining handlers of that event are not called.
+1. **Errors.** An invalid selector in a plan throws at `run`. The rest of the plan does not run. An error that a microtask throws has no stack that points to the code that built the chain. If a handler throws, the remaining handlers of that bound element are not called for this event. The listeners of other elements still run.
 2. **Passive listeners.** If the bound element is `html` or `body`, a browser can treat `touchstart`, `wheel`, and similar events as passive. Then `preventDefault()` in a handler has no effect. The list of these events is not confirmed.
 3. **The `Element` type.** `run(document)[0].value` needs a cast to `HTMLInputElement`. No generic type parameter is planned.
 4. **Order of nodes in different trees.** `docOrder` uses `compareDocumentPosition`. For nodes in different trees, the order depends on the implementation. Transitivity across three or more trees is not confirmed. This affects held sets that mix nodes in the document with detached nodes, which `create`, `from`, `flatMap`, and `closest` can bring in.

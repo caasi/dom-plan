@@ -96,8 +96,8 @@ Plan.all('.todoapp')
 - In a delegated binding, `focus`, `blur`, `mouseenter`, `mouseleave`, `pointerenter`, and `pointerleave` use the events that bubble. The handler gets the native event, so `e.type` is, for example, `focusin`. A direct binding uses its own event type.
 - There is no binding on `document` or `window`. Use `Plan.from(document.documentElement)`, or the native API inside `tap`.
 - `e.currentTarget` is the bound element only while the handler runs. If a `tap` needs it, store it in a `const` in the handler, or use the `el` of a direct binding.
-- The plans that handlers return run after all handlers of the event are called. A later handler does not see the DOM change of an earlier handler. In jQuery, it does.
-- If a handler throws, the remaining handlers of that event are not called.
+- The plans that the handlers of one bound element return run after all of that element's handlers for the event are called. A later handler of the same element does not see the DOM change of an earlier one. In jQuery, it does. A bound element further out has its own listener, so on a real event its handlers can see those changes.
+- If a handler throws, the remaining handlers of that bound element are not called for this event. The listeners of other elements still run.
 - A handler cannot return `false` (TypeScript rejects it). To stop the default action, call `e.preventDefault()`.
 
 ## Rules for changes to this repository

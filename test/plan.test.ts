@@ -621,3 +621,15 @@ test('R50 shadow DOM: the walk stops when it leaves the bound element through a 
   Plan.from(inner).off().run(shadow)
   void root
 })
+
+test('R51 a listener calls only the bindings of its own event type', () => {
+  const root = fixture('<p></p>')
+  const log: string[] = []
+  const off = bindOn(root, [
+    ['click', 'p', () => void log.push('click')],
+    ['keydown', 'p', () => void log.push('keydown')],
+  ])
+  click($('p'))
+  assert.deepEqual(log, ['click'])
+  off()
+})

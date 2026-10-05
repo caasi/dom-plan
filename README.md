@@ -129,7 +129,7 @@ dom-plan does not wrap promises. Build a plan when the data arrives, and run it.
 - There are no getters (`.text()`, `.attr(name)`, `.val()`). Read with `run` and plain JavaScript, or inside `tap`.
 - `filter` takes a function only: `filter(el => el.matches('.done'))`.
 - HTML strings are not accepted. Build elements with `Plan.create`.
-- The plan that a handler returns runs after all handlers of the event are called. A later handler does not see the DOM change of an earlier handler.
+- The plans that the handlers of one bound element return run after all of that element's handlers for the event are called. A later handler of the same element does not see the DOM change of an earlier one. In jQuery, it does.
 
 The full list is in section 9 of [the design record](https://github.com/caasi/dom-plan/blob/main/docs/000-design.md).
 

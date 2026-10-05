@@ -2,7 +2,7 @@
 
 > Note: Claude Opus 5.5 wrote this document with the author (caasi), from their design sessions. Claude Fable 5.1 reviewed four drafts. In the "Decided by" column, "author" means caasi and "Claude" means the model.
 
-Status: v4, 2026-10-05. The design is implemented in this repository, with 45 unit checks in jsdom and 21 browser checks. The package name is `@caasi/dom-plan`. **The code in `src/index.ts` is the source of truth.** This document records the decisions and the reasons for them.
+Status: v4, 2026-10-05. The design is implemented in this repository, with 46 unit checks in jsdom and 21 browser checks. The package name is `@caasi/dom-plan`. **The code in `src/index.ts` is the source of truth.** This document records the decisions and the reasons for them.
 
 History: Fable reviewed v1, v2.1, v3, and v3.1. v3 introduced the **step model** (section 4). v3.1 applied the author's decisions D19-D22 and the v3 review. v3.2 renamed the class to `Plan` (D19) and applied the v3.1 review. v4 applied the findings of the spike: `or` became jQuery's `add` and `end`, plus a new `also` (D25). Section 12 lists how each review finding was handled, and the v4 changes.
 
@@ -112,7 +112,7 @@ on(bindings: readonly Binding[]): Plan
 off(bindings?: readonly Binding[]): Plan
 ```
 
-At `run`, `on` validates the binding selectors of each held element, then adds the bindings to its table, with one listener for each listened type (D12). For each event, the listener first builds the handler queue: it walks from `event.target` up to the bound element, stops if it leaves the bound element, and at each element matches the delegated bindings in order (D10, D11). Like jQuery, this walk skips a `click` with `button >= 1` and a `click` on a disabled element. Then the direct bindings join the queue at the bound element. Then the listener calls the queue level by level, and `stopPropagation` stops the outer levels. A handler that returns a plan gets its own microtask, and the plan runs with the bound element as root (D22). Because the queue and the copy of the table are made before any handler runs, an `on` or `off` on the same element during a dispatch applies to the next event. On another element, it applies at once, because that element's listener has not run yet.
+At `run`, `on` validates the binding selectors of each held element, then adds the bindings to its table, with one listener for each listened type (D12). For each event, the listener first builds the handler queue: it walks from `event.target` up to the bound element, stops if it leaves the bound element, and at each element matches the delegated bindings in order (D10, D11). Like jQuery, this walk skips a `click` with `button >= 1` and a `click` on a disabled element. Then the direct bindings join the queue at the bound element. Then the listener calls the queue level by level, and `stopPropagation` stops the outer levels. A handler that returns a plan gets its own microtask, and the plan runs with the bound element as root (D22). Because the queue and the copy of the table are made before any handler runs, an `on` or `off` on the same element during a dispatch applies to the next event. On an element further out, it applies at once, because that element's listener has not run yet. On an element further in, whose listener already ran, it applies to the next event.
 
 ## 6. Asynchronous work (D21)
 
@@ -188,8 +188,8 @@ Taken from section 3 of the Fable v3 review.
 - A handler that returns `false` is ignored (`false` is falsy). It is not `preventDefault()` + `stopPropagation()`.
 - A handler gets `(e, el)`. `this` is not the element, and `e.type` is the native type. In a delegated handler, jQuery sets `currentTarget` to the matched element and `delegateTarget` to the bound element. dom-plan does not change the event: `currentTarget` is the bound element, the matched element is `el`, and after the handler returns, `currentTarget` is not defined (D18).
 - A delegated binding never matches the element it is bound on (D11). For that element, use a direct binding: the selector `null` (D28).
-- Events that do not bubble (`load`, `error`, `scroll` on an element, `toggle`, `invalid`, `play`, and more) do not reach the root. The only exceptions are the six events of D12. jQuery delegation has the same limit, but both libraries have direct binding.
-- The plan that a handler returns runs **after** all handlers of the event are called. A later handler does not see the DOM change of an earlier handler. jQuery changes the DOM at once, so a later handler sees it.
+- A delegated binding cannot receive events that do not bubble (`load`, `error`, `scroll` on an element, `toggle`, `invalid`, `play`, and more), except the six events of D12. A direct binding receives such an event when it is dispatched on the bound element itself. jQuery delegation has the same limit, but both libraries have direct binding.
+- The plans that the handlers of one bound element return run **after** all of that element's handlers for the event are called. A later handler of the same element does not see the DOM change of an earlier one. A bound element further out has its own listener, so on a real event its handlers can see those changes. jQuery changes the DOM at once, so a later handler sees it.
 - With several targets, `append(child)` runs the child once for each target. jQuery copies the node for all targets except the last. For a child that starts with `create`, the result is the same. For `append(Plan.all('.x'))`, it is different.
 - There is no `trigger`. Use `dispatchEvent(new CustomEvent(...))` inside `tap`.
 - `stopImmediatePropagation` does not stop the handlers at the same level (D17).
@@ -274,6 +274,7 @@ Delegation (all synthetic events use `bubbles: true`):
 - R48 `off` of one event type keeps the bindings of another type.
 - R49 A direct `mouseenter` binding uses the native `mouseenter`.
 - R50 Shadow DOM: the walk stops when it leaves the bound element through a slot.
+- R51 A listener calls only the bindings of its own event type.
 
 Dependencies on jsdom: R18 and R21 need `cancelBubble` to show `stopPropagation`. R25 needs the canceled activation of a checkbox. If one of these checks fails, first make sure that jsdom supports the feature. Then decide if the library has a fault.
 
