@@ -9,7 +9,7 @@ dom-plan is a lazy, monadic, jQuery-inspired layer for the DOM. A `Plan` is a de
 The core idea has four parts:
 
 - **jQuery-inspired.** Chains, the step model of `pushStack`, and the delegation rules come from jQuery.
-- **Monadic.** Selection is a monad over a list of elements. Effects ride along, like a Writer. `run` is the only exit.
+- **Monadic.** Selection is a monad over a list of elements, with `Plan.from` as `return` and `flatMap` as bind (`flatMap` takes a function that returns an array of elements, not a plan). A plan is a sequence of steps. The only value it carries is the held set. Each select step reads the live DOM, so it sees the changes of earlier effects. `run` is the only exit.
 - **Lazy.** To build a plan does not touch the DOM. The user decides when to leave the lazy part.
 - **Light.** One class and one array of steps. DOM behavior is the native behavior. The library does not try to wrap everything: it does not change native behavior to make it easier, and it does not wrap promises.
 
@@ -22,15 +22,18 @@ The design record is `docs/000-design.md`. Known limits are in `docs/known-issue
 1. End each plan that must change the DOM with `.run(root)`.
 2. If a `mount` handler returns a plan, do not call `run` on it. `mount` runs it in a microtask, with the mount root as `root`.
 
-A plan that a handler returns can only select under the mount root. `Plan.all('#elsewhere')` outside the mount root selects nothing, and nothing reports it. 3. Do not write `$(...)`. Start a plan with `Plan.all`, `Plan.from`, `Plan.create`, or `Plan.none`.
+In a plan that a handler returns, `Plan.all` and `add` select only under the mount root. `Plan.all('#elsewhere')` outside the mount root selects nothing, and nothing reports it.
+
+3. Do not write `$(...)`. Start a plan with `Plan.all`, `Plan.from`, `Plan.create`, or `Plan.none`.
 
 A plan that is built and never run does nothing. TypeScript does not report this mistake.
 
 ### Select
 
 - Each select step starts from the elements that the previous step held: `flatMap`, `find`, `filter`, `closest`, `first`, `add`. `flatMap` is the primitive of `find`, `filter`, and `closest`.
-- `Plan.from(el)` selects `el` only if `el` is under the root of `run`. Otherwise it selects nothing.
+- `Plan.from(el)` selects `el` wherever it is: outside the root, and also after `el` is removed. To skip a removed element, add `filter(el => el.isConnected)`.
 - `closest` and `flatMap` can select elements outside the root.
+- `also` concatenates the steps, so an `end()` after `also(next)` can go back into the first plan.
 - `end()` goes back to the set of the previous select step, like jQuery `.end()`.
 - `add(css)` takes a selector string only.
 
@@ -54,11 +57,7 @@ current.find('.days').setText('').end().find('.place').setText(place).run(docume
 
 dom-plan does not prevent effects inside handlers, `tap`, `flatMap`, or `filter`. You are responsible for them.
 
-In this repository, obey this convention:
-
-1. In a handler, only call methods on the event and read values.
-2. Put all other effects in `tap`.
-3. If you break this convention, write a comment that gives the reason.
+The recommendation is to write the DOM and to send requests in `tap`, not in a handler. Then all DOM changes happen in `run`, in the order of the plan.
 
 ### Asynchronous work
 

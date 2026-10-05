@@ -31,6 +31,8 @@ function same(actual: readonly Element[], expected: readonly Element[]) {
   assert.equal(actual.length, expected.length, 'length')
   actual.forEach((el, i) => assert.equal(el, expected[i], `index ${i}`))
 }
+const click = (el: Element, init: MouseEventInit = {}) =>
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init }))
 const tick = () => new Promise<void>(r => queueMicrotask(r))
 
 // --- step model and selection ---
@@ -106,15 +108,14 @@ test('R9 running a plan twice repeats the effects', () => {
   assert.equal($('p').classList.contains('on'), false)
 })
 
-test('R10 from(el) only inside root', () => {
+test('R10 from(el) is return: it selects el wherever el is', () => {
   const root = fixture()
   const outside = document.createElement('p')
   document.body.append(outside)
-  Plan.from(outside).addClass('x').run(root)
-  assert.equal(outside.className, '')
+  same(Plan.from(outside).addClass('x').run(root), [outside])
+  assert.equal(outside.className, 'x')
   same(Plan.from(root).run(root), [root])
 })
-
 test('R11 empty set: tap not called; first of empty', () => {
   const root = fixture()
   let called = false
@@ -178,17 +179,48 @@ test('R29 also: effects of this run before effects of next; run returns next', (
   assert.deepEqual(log, ['a', 'b'])
   same(out, [$('i')])
 })
-test('R30 from(el) after el.remove() is empty', () => {
+test('R30 append(from(el)) moves el to a new parent (native append)', () => {
+  const root = fixture('<ul id=a><li>x</li></ul><ul id=b></ul>')
+  const li = $('#a li')
+  Plan.all('#b').append(Plan.from(li)).run(root)
+  assert.equal($('#a').children.length, 0)
+  assert.equal(li.parentElement, $('#b'))
+})
+
+test('R33 end after also goes back into the first plan (steps are concatenated)', () => {
+  const root = fixture('<p></p><i></i>')
+  same(Plan.all('p').also(Plan.all('i')).end().run(root), [$('p')])
+})
+
+test('R34 left identity: from(x).flatMap(f) selects f(x), deduplicated in document order', () => {
   const root = fixture()
+  const outside = document.createElement('div')
+  outside.innerHTML = '<b></b><i></i>'
+  document.body.append(outside)
+  const [b, i] = [...outside.children]
+  // x is outside the root, and f returns duplicates in reverse order
+  same(
+    Plan.from(outside)
+      .flatMap(() => [i, b, i])
+      .run(root),
+    [b, i],
+  )
+})
+
+test('R35 from(el) still selects el after el.remove(); guard with isConnected', () => {
+  const root = fixture('<p></p>')
   const p = $('p')
   p.remove()
-  same(Plan.from(p).run(root), [])
+  same(Plan.from(p).run(root), [p])
+  same(
+    Plan.from(p)
+      .filter(el => el.isConnected)
+      .run(root),
+    [],
+  )
 })
 
 // --- delegation ---
-
-const click = (el: Element, init: MouseEventInit = {}) =>
-  el.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init }))
 
 test('R17 delegation reaches elements added after mount; plan runs after dispatch', async () => {
   const root = fixture('<ul></ul>')
