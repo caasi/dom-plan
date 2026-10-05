@@ -49,7 +49,7 @@ Plan.all('form .field')
 
 - Starting points: `Plan.all(css)`, `Plan.from(el)`, `Plan.create(tag)`, `Plan.none`.
 - Select steps: `find`, `filter`, `closest`, `first`, `add`, `flatMap`, and `end` (back to the previous set).
-- Effects: `addClass`, `removeClass`, `toggleClass`, `attr`, `removeAttr`, `setText`, `remove`, `append`, and `tap` for anything else.
+- Effects: `addClass`, `removeClass`, `toggleClass`, `attr`, `removeAttr`, `setText`, `remove`, `append`, `on`, `off`, and `tap` for anything else.
 
 `run` returns the elements that the plan holds at the end. A plan with no effects is a plain read:
 
@@ -85,12 +85,12 @@ Plan.all('#forecast').find('.days').setText('').end().find('.place').setText('Ta
 
 ### Events
 
-`mount(root, bindings)` delegates events from `root` with the rules of jQuery. A handler can return a plan. `mount` runs that plan in a microtask, with `root` as the root. `mount` returns a function that removes the listeners.
+`plan.on(bindings)` binds events on each element that the plan holds, with the rules of jQuery. Like every effect, it binds at `run`. A handler can return a plan, and that plan runs in a microtask with the bound element as root. A binding with the selector `null` binds to the element itself.
 
 ```ts
-import { Plan, mount } from '@caasi/dom-plan'
+import { Plan, type Binding } from '@caasi/dom-plan'
 
-const unmount = mount(document.querySelector('.todoapp')!, [
+const bindings: Binding[] = [
   ['click', '.delete', (_e, btn) => Plan.from(btn).closest('li').remove()],
   [
     'change',
@@ -100,8 +100,16 @@ const unmount = mount(document.querySelector('.todoapp')!, [
         .closest('li')
         .toggleClass('done', (box as HTMLInputElement).checked),
   ],
-])
+  ['click', null, (_e, el) => Plan.from(el).addClass('touched')],
+]
+
+Plan.all('.todoapp').on(bindings).run(document)
+
+// later: remove these bindings, or all with off()
+Plan.all('.todoapp').off(bindings).run(document)
 ```
+
+A plan with `on` that runs twice binds twice. Run it once, or call `off` first. To call `off` later, keep the bound element, so that a removed or changed element is not missed. There is no binding on `document` or `window`: use `Plan.from(document.documentElement)`, or the native API inside `tap`.
 
 ### Asynchronous work
 
@@ -121,7 +129,7 @@ dom-plan does not wrap promises. Build a plan when the data arrives, and run it.
 - There are no getters (`.text()`, `.attr(name)`, `.val()`). Read with `run` and plain JavaScript, or inside `tap`.
 - `filter` takes a function only: `filter(el => el.matches('.done'))`.
 - HTML strings are not accepted. Build elements with `Plan.create`.
-- The plan that a handler returns runs after all handlers of the event are called. A later handler does not see the DOM change of an earlier handler.
+- The plans that the handlers of one bound element return run after all of that element's handlers for the event are called. A later handler of the same element does not see the DOM change of an earlier one. In jQuery, it does.
 
 The full list is in section 9 of [the design record](https://github.com/caasi/dom-plan/blob/main/docs/000-design.md).
 

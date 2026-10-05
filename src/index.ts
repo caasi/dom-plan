@@ -133,6 +133,31 @@ export class Plan {
   }
 
   /**
+   * Binds events on each held element, with jQuery's delegation rules. Binding happens at `run`, like
+   * every effect, so running the plan twice binds twice. Use `off` to remove bindings.
+   */
+  on(bindings: readonly Binding[]) {
+    const copy = bindings.map((b): Binding => [...b])
+    return this.tap(el => {
+      for (const [, css] of copy) if (css !== null) el.querySelector(css) // throw before any is bound
+      for (const b of copy) bind(el, b)
+    })
+  }
+
+  /**
+   * Removes bindings from each held element: the ones equal to `bindings` (same event, selector and
+   * handler), or all of them when `bindings` is omitted.
+   */
+  off(bindings?: readonly Binding[]) {
+    return this.tap(el =>
+      unbind(
+        el,
+        b => !bindings || bindings.some(x => x[0] === b[0] && x[1] === b[1] && x[2] === b[2]),
+      ),
+    )
+  }
+
+  /**
    * For each held element, runs `child` with that element as root and appends what it returns
    * (native `Element.append`: a node already in the document is moved).
    */
@@ -146,9 +171,10 @@ export class Plan {
   }
 }
 
-/** Return a Plan to have it run in a microtask after the event, or nothing. */
+/** Return a Plan to have it run in a microtask after the event, with the bound element as root. */
 export type Handler = (e: Event, el: Element) => Plan | void
-export type Binding = readonly [event: string, selector: string, handler: Handler]
+/** `selector` null binds to the element itself; a string delegates to its descendants. */
+export type Binding = readonly [event: string, selector: string | null, handler: Handler]
 
 const DELEGATE: Record<string, string> = {
   focus: 'focusin',
@@ -160,45 +186,72 @@ const DELEGATE: Record<string, string> = {
 }
 const ENTER_LEAVE = new Set(['mouseenter', 'mouseleave', 'pointerenter', 'pointerleave'])
 const nativeOf = (t: string) => DELEGATE[t] ?? t
+// Only delegation needs the bubbling twin; a direct binding listens to its own event type.
+const listenType = (b: Binding) => (b[1] === null ? b[0] : nativeOf(b[0]))
 
-/**
- * Delegates events from `root` to handlers by selector, with jQuery's dispatch rules:
- * every ancestor from the target up to (not including) root is matched, inner first.
- * Returns a function that removes the listeners.
- */
-export function mount(root: ParentNode, bindings: readonly Binding[]): () => void {
-  const table = bindings.map((b): Binding => [...b])
-  for (const [, css] of table) root.querySelector(css) // throw on a bad selector now, not at the first event
-  const ac = new AbortController()
-  for (const native of new Set(table.map(b => nativeOf(b[0])))) {
-    root.addEventListener(
-      native,
-      e => {
-        if (e.type === 'click' && (e as MouseEvent).button >= 1) return
-        for (
-          let n = e.target as Node | null;
-          n && n !== root && !e.cancelBubble;
-          n = n.parentNode
-        ) {
-          if (n.nodeType !== 1) continue
-          const el = n as Element
-          if (e.type === 'click' && (el as HTMLButtonElement).disabled === true) continue
-          for (const [t, css, h] of table) {
-            if (nativeOf(t) !== native || !el.matches(css)) continue
-            if (ENTER_LEAVE.has(t)) {
-              const rel = (e as MouseEvent).relatedTarget as Node | null
-              if (rel && el.contains(rel)) continue
-            }
-            const p = h(e, el)
-            if (p)
-              queueMicrotask(() => {
-                p.run(root)
-              })
-          }
-        }
-      },
-      { signal: ac.signal },
-    )
+// Each element that `on` ran on keeps its own table. The listener of a type reads the table at
+// dispatch time, so `off` takes effect at once.
+type Bound = { table: Binding[]; listeners: Map<string, (e: Event) => void> }
+const registry = new WeakMap<Element, Bound>()
+
+function bind(host: Element, b: Binding) {
+  let r = registry.get(host)
+  if (!r) registry.set(host, (r = { table: [], listeners: new Map() }))
+  r.table.push(b)
+  const type = listenType(b)
+  if (!r.listeners.has(type)) {
+    const bound = r
+    const fn = (e: Event) => dispatch(host, bound, type, e)
+    r.listeners.set(type, fn)
+    host.addEventListener(type, fn)
   }
-  return () => ac.abort()
+}
+
+function unbind(host: Element, remove: (b: Binding) => boolean) {
+  const r = registry.get(host)
+  if (!r) return
+  r.table = r.table.filter(b => !remove(b))
+  for (const [type, fn] of r.listeners)
+    if (!r.table.some(b => listenType(b) === type)) {
+      host.removeEventListener(type, fn)
+      r.listeners.delete(type)
+    }
+}
+
+// The relatedTarget is inside el: the pointer moved within el, so this is not an enter or a leave.
+const within = (e: Event, el: Element) => {
+  const rel = (e as MouseEvent).relatedTarget as Node | null
+  return !!rel && el.contains(rel)
+}
+
+// jQuery's dispatch: build the whole handler queue first, then call it, so that a handler that
+// changes the DOM does not change who is called for this event. Delegated bindings match the
+// ancestors from the target up to the host (not the host), inner first, and skip non-primary
+// clicks and disabled elements. Direct bindings (selector null) run last, on the host, unfiltered.
+function dispatch(host: Element, r: Bound, type: string, e: Event) {
+  const table = r.table.filter(b => listenType(b) === type) // on and off apply from the next event
+  const queue: [Element, Handler[]][] = []
+  const delegated = table.filter(b => b[1] !== null)
+  if (delegated.length && !(e.type === 'click' && (e as MouseEvent).button >= 1))
+    for (let n = e.target as Node | null; n && n !== host && host.contains(n); n = n.parentNode) {
+      if (n.nodeType !== 1) continue
+      const el = n as Element
+      if (e.type === 'click' && (el as HTMLButtonElement).disabled === true) continue
+      const hs = delegated
+        .filter(([t, css]) => el.matches(css!) && !(ENTER_LEAVE.has(t) && within(e, el)))
+        .map(b => b[2])
+      if (hs.length) queue.push([el, hs])
+    }
+  const direct = table.filter(b => b[1] === null).map(b => b[2])
+  if (direct.length) queue.push([host, direct])
+  for (const [el, hs] of queue) {
+    if (e.cancelBubble) break // stopPropagation stops the outer levels, as in jQuery
+    for (const h of hs) {
+      const p = h(e, el)
+      if (p)
+        queueMicrotask(() => {
+          p.run(host)
+        })
+    }
+  }
 }

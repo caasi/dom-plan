@@ -20,9 +20,9 @@ The design record is `docs/000-design.md`. Known limits are in `docs/known-issue
 ### Run the plan
 
 1. End each plan that must change the DOM with `.run(root)`.
-2. If a `mount` handler returns a plan, do not call `run` on it. `mount` runs it in a microtask, with the mount root as `root`.
+2. If a handler returns a plan, do not call `run` on it. The plan runs in a microtask, with the element that `on` bound as `root`.
 
-In a plan that a handler returns, `Plan.all` and `add` select only under the mount root. `Plan.all('#elsewhere')` outside the mount root selects nothing, and nothing reports it.
+In a plan that a handler returns, `Plan.all` and `add` select only under the bound element. `Plan.all('#elsewhere')` outside it selects nothing, and nothing reports it.
 
 3. Do not write `$(...)`. Start a plan with `Plan.all`, `Plan.from`, `Plan.create`, or `Plan.none`.
 
@@ -77,15 +77,27 @@ If the request starts in the handler and the promise is already settled, the res
 
 ### Events
 
-`mount(root, bindings)` delegates events with the rules of jQuery. It returns a function that removes the listeners.
+`plan.on(bindings)` binds events on each element that the plan holds, at `run`, with the rules of jQuery. `plan.off(bindings)` removes the equal bindings (same event, selector, and handler), and `plan.off()` removes all of them.
 
-- The root element itself is never matched.
+```ts
+Plan.all('.todoapp')
+  .on([
+    ['click', '.delete', (_e, btn) => Plan.from(btn).closest('li').remove()], // delegated
+    ['click', null, (_e, el) => Plan.from(el).addClass('touched')], // direct, on .todoapp itself
+  ])
+  .run(document)
+```
+
+- A plan with `on` that runs twice binds twice. Run it once, or call `off` first.
+- To call `off` later, keep the bound element (`Plan.from(el).off(...)`). A selector that runs again can miss an element that was removed or changed.
+- A delegated binding never matches the element that it is bound on. To handle events on that element, use a direct binding: the selector `null`.
 - Handlers for inner elements run first. `stopPropagation()` stops the outer levels.
 - `stopImmediatePropagation()` does not stop other handlers at the same level.
-- `focus`, `blur`, `mouseenter`, `mouseleave`, `pointerenter`, and `pointerleave` are delegated with the events that bubble. The handler gets the native event, so `e.type` is, for example, `focusin`.
-- `e.currentTarget` is the root only while the handler runs. If a `tap` needs the root, store it in a `const` in the handler.
-- The plans that handlers return run after all handlers of the event are called. A later handler does not see the DOM change of an earlier handler. In jQuery, it does.
-- If a handler throws, the remaining handlers of that event are not called.
+- In a delegated binding, `focus`, `blur`, `mouseenter`, `mouseleave`, `pointerenter`, and `pointerleave` use the events that bubble. The handler gets the native event, so `e.type` is, for example, `focusin`. A direct binding uses its own event type.
+- There is no binding on `document` or `window`. Use `Plan.from(document.documentElement)`, or the native API inside `tap`.
+- `e.currentTarget` is the bound element only while the handler runs. If a `tap` needs it, store it in a `const` in the handler, or use the `el` of a direct binding.
+- The plans that the handlers of one bound element return run after all of that element's handlers for the event are called. A later handler of the same element does not see the DOM change of an earlier one. In jQuery, it does. A bound element further out has its own listener, so on a real event its handlers can see those changes.
+- If a handler throws, the remaining handlers of that bound element are not called for this event. The listeners of other elements still run.
 - A handler cannot return `false` (TypeScript rejects it). To stop the default action, call `e.preventDefault()`.
 
 ## Rules for changes to this repository
