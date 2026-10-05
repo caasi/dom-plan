@@ -1,0 +1,82 @@
+/* Neo-brutalism for the dom-plan examples. State lives in classes and attributes; this file draws them. */
+:root {
+  --ink: #111;
+  --paper: #fffdf5;
+  --yellow: #ffd60a;
+  --pink: #ff6fb5;
+  --mint: #3ddc97;
+  --blue: #4d7cff;
+  --red: #ff4d4d;
+  --border: 3px solid var(--ink);
+  --shadow: 5px 5px 0 var(--ink);
+  --shadow-pressed: 2px 2px 0 var(--ink);
+  font:
+    600 17px/1.4 ui-monospace,
+    'SFMono-Regular',
+    Menlo,
+    Consolas,
+    monospace;
+  color: var(--ink);
+  background: var(--paper);
+}
+body {
+  max-width: 36rem;
+  margin: 2.5rem auto;
+  padding: 0 1rem;
+}
+h1 {
+  display: inline-block;
+  margin: 0 0 1.5rem;
+  padding: 0.2rem 0.8rem;
+  font-size: 3rem;
+  text-transform: uppercase;
+  letter-spacing: -0.04em;
+  background: var(--yellow);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  transform: rotate(-2deg);
+}
+input:not([type='checkbox']),
+button {
+  font: inherit;
+  color: var(--ink);
+  border: var(--border);
+  box-shadow: var(--shadow);
+  border-radius: 0;
+}
+input:not([type='checkbox']) {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.7rem 0.9rem;
+  background: #fff;
+}
+button {
+  padding: 0.35rem 0.8rem;
+  background: #fff;
+  cursor: pointer;
+  transition:
+    transform 80ms,
+    box-shadow 80ms;
+}
+button:active {
+  transform: translate(3px, 3px);
+  box-shadow: var(--shadow-pressed);
+}
+/* WCAG 2.2 SC 1.4.11 / 2.4.7: a focus ring that never depends on colour alone. */
+:focus-visible {
+  outline: 4px solid var(--blue);
+  outline-offset: 3px;
+}
+input[type='checkbox'] {
+  width: 1.4rem;
+  height: 1.4rem;
+  accent-color: var(--ink);
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

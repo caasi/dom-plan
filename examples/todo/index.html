@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>dom-plan todo</title>
+    <link rel="stylesheet" href="../shared/brutal.css" />
+    <style>
+      .todos {
+        list-style: none;
+        padding: 0;
+        margin: 1.5rem 0;
+        display: grid;
+        gap: 0.8rem;
+      }
+      .todos li {
+        display: flex;
+        gap: 0.7rem;
+        align-items: center;
+        padding: 0.6rem 0.8rem;
+        background: #fff;
+        border: var(--border);
+        box-shadow: var(--shadow);
+      }
+      .todos li.is-new {
+        animation: drop 220ms ease-out;
+      }
+      @keyframes drop {
+        from {
+          transform: translateY(-8px) rotate(-1deg);
+          opacity: 0;
+        }
+      }
+      .todos li.done {
+        background: var(--mint);
+      }
+      .todos li.done .title {
+        text-decoration: line-through 3px;
+      }
+      .todos li.editing {
+        background: var(--yellow);
+      }
+      .title {
+        flex: 1;
+      }
+      .delete {
+        margin-left: auto;
+        background: var(--red);
+      }
+      li .edit,
+      li.editing .title {
+        display: none;
+      }
+      li.editing .edit {
+        display: block;
+        flex: 1;
+        box-shadow: none;
+        padding: 0.3rem 0.5rem;
+      }
+      .todos[data-filter='active'] li.done,
+      .todos[data-filter='done'] li:not(.done) {
+        display: none;
+      }
+      footer {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.8rem;
+      }
+      .count {
+        display: inline-block;
+        min-width: 2ch;
+        padding: 0 0.4rem;
+        text-align: center;
+        background: var(--pink);
+        border: var(--border);
+      }
+      .filters {
+        display: flex;
+        gap: 0.5rem;
+        margin-left: auto;
+      }
+      .filters button[aria-pressed='true'] {
+        background: var(--ink);
+        color: var(--paper);
+        box-shadow: var(--shadow-pressed);
+        transform: translate(3px, 3px);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="todoapp">
+      <h1>todos</h1>
+      <form class="new">
+        <input
+          name="text"
+          placeholder="What needs to be done?"
+          autocomplete="off"
+          aria-label="New todo"
+        />
+      </form>
+      <ul class="todos" data-filter="all"></ul>
+      <footer>
+        <span><span class="count">0</span> left</span>
+        <span class="filters">
+          <button data-filter="all" aria-pressed="true">All</button>
+          <button data-filter="active" aria-pressed="false">Active</button>
+          <button data-filter="done" aria-pressed="false">Done</button>
+        </span>
+      </footer>
+    </main>
+    <script src="bundle.js"></script>
+  </body>
+</html>
