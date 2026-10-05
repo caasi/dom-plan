@@ -8,6 +8,7 @@ These limits are intentional. They follow from the core idea.
 
 - **A plan that is never run does nothing.** TypeScript does not report it, and nothing happens at run time.
 - **Effects inside closures are not prevented (D13).** A handler, a `tap` callback, or a `flatMap` function can write the DOM, send a request, or store an element outside the plan. The types cannot block this.
+- **`Plan.from(el)` does not skip a removed element (D27).** A plan that starts from a captured element still acts on it after `el.remove()`. Add `filter(el => el.isConnected)` to skip it.
 - **Elements can escape.** The array that `run` returns, and elements that a `tap` callback stores, are plain DOM elements. Changes to them are outside the plan.
 - **No effect-order composition (D26).** `also` concatenates steps in the written order. There is no scheduling, no interleaving, and no asynchronous ordering.
 - **`addClass('a b')` throws `InvalidCharacterError` (D24).** This is the native behavior of `DOMTokenList`.
@@ -19,7 +20,7 @@ These limits are intentional. They follow from the core idea.
 1. **Errors.** An invalid selector in a plan throws at `run`. The rest of the plan does not run. An error that a microtask throws has no stack that points to the code that built the chain. If a handler throws, the remaining handlers of that event are not called.
 2. **Passive listeners.** If the root is `document` or `body`, a browser can treat `touchstart`, `wheel`, and similar events as passive. Then `preventDefault()` in a handler has no effect. The list of these events is not confirmed.
 3. **The `Element` type.** `run(document)[0].value` needs a cast to `HTMLInputElement`. No generic type parameter is planned.
-4. **Order of nodes in different trees.** `docOrder` uses `compareDocumentPosition`. For nodes in different trees, the order depends on the implementation. Transitivity across three or more trees is not confirmed. This affects only detached nodes from `create`.
+4. **Order of nodes in different trees.** `docOrder` uses `compareDocumentPosition`. For nodes in different trees, the order depends on the implementation. Transitivity across three or more trees is not confirmed. This affects held sets that mix nodes in the document with detached nodes, which `create`, `from`, `flatMap`, and `closest` can bring in.
 
 ## Not verified
 
