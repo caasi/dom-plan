@@ -1,10 +1,10 @@
 # dom-plan
 
-> Note: Claude Opus 5.5 wrote this README with the author (caasi).
+> Note: Claude Opus 5.5 wrote this README with the author (caasi). Claude Opus 5.5 reviewed it.
 
-A lazy, light-weight DOM operation language with a monadic interface, inspired by jQuery.
+A small, lazy DOM library in the style of jQuery. You describe the DOM work first, and run it later.
 
-A `Plan` is a description of DOM work. To build a plan does not touch the DOM. Only `plan.run(root)` does the work.
+A `Plan` is a description of DOM work. To build a plan does not touch the DOM. Only `plan.run(root)` does the work. `root` is where `Plan.all` and `add` search, usually `document`.
 
 ```ts
 import { Plan } from '@caasi/dom-plan'
@@ -13,14 +13,24 @@ const plan = Plan.all('.todo').removeClass('new').addClass('seen') // nothing ha
 plan.run(document) // now the DOM changes
 ```
 
-Status: not published to npm yet. The core is about 1 KB with minify and gzip (2,320 bytes minified, 1,020 bytes with gzip, measured with esbuild on 2026-10-05).
+The core is about 1 KB, minified and gzipped.
+
+## Install
+
+```sh
+npm install @caasi/dom-plan
+```
+
+Status: the package is not on npm yet.
 
 ## The core idea
 
+dom-plan is a lazy, lightweight DOM operation language with a monadic interface, inspired by jQuery.
+
 - **jQuery-inspired.** Chains, the step model of jQuery's `pushStack`, and the event delegation rules come from jQuery.
-- **Monadic.** Selection is a monad over a list of elements. `Plan.from` is `return`, and `flatMap` is bind. A plan is a sequence of steps, and the only value it carries is the set of elements that the current step holds.
+- **Monadic.** Selection is a monad over a list of elements: `Plan.from` is `return`, and `flatMap` is bind. Each select step removes duplicates and sorts the elements in document order. A plan is a sequence of steps, and the only value it carries is the set of elements that the current step holds.
 - **Lazy.** To build a plan does not touch the DOM. `run` is the only exit. You decide when to leave the lazy part.
-- **Light.** One class and one array of steps. DOM behavior is the native behavior. The library does not try to wrap everything.
+- **Lightweight.** One class and one array of steps. DOM behavior is the native behavior. The library does not try to wrap everything.
 
 ## Usage
 
@@ -41,15 +51,17 @@ Plan.all('form .field')
 - Select steps: `find`, `filter`, `closest`, `first`, `add`, `flatMap`, and `end` (back to the previous set).
 - Effects: `addClass`, `removeClass`, `toggleClass`, `attr`, `removeAttr`, `setText`, `remove`, `append`, and `tap` for anything else.
 
-`run` returns the elements of the last step. A plan with no effects is a plain read:
+`run` returns the elements that the plan holds at the end. A plan with no effects is a plain read:
 
 ```ts
 const [input] = Plan.all('#name').run(document)
 ```
 
+A plan is a query, not a result. If you call `run` again, it selects again and repeats the effects.
+
 ### Build elements
 
-`Plan.create(tag)` starts from a new element. `append(child)` runs the child plan once for each target, so each target gets its own copy.
+`Plan.create(tag)` starts from a new element. `append(child)` runs the child plan once for each target, with that target as the root. So a child that starts with `Plan.create` gives each target new elements.
 
 ```ts
 const item = (text: string) =>
@@ -58,12 +70,15 @@ const item = (text: string) =>
 Plan.all('ul.todos').append(item('Buy milk')).run(document)
 ```
 
+A child that starts with `Plan.all` searches inside the target, not the document. To move an element that is somewhere else, use `append(Plan.from(el))`.
+
 ### Do two things in order
 
 `also(next)` runs another plan after this one, in the same `run`. `end()` goes back to the previous set, so one chain can change two parts of the same selection.
 
 ```ts
-Plan.from(button).closest('li').remove().also(Plan.all('.count').setText('…')).run(document)
+// button: the clicked element
+Plan.from(button).closest('li').remove().also(Plan.all('.count').setText('2 left')).run(document)
 
 Plan.all('#forecast').find('.days').setText('').end().find('.place').setText('Taipei').run(document)
 ```
@@ -90,15 +105,25 @@ const unmount = mount(document.querySelector('.todoapp')!, [
 
 ### Asynchronous work
 
-dom-plan does not wrap promises. Build a plan when the data arrives, and run it. To ignore a stale response, keep a request id in the DOM and guard with `filter`. See section 6 of [the design record](docs/000-design.md).
+dom-plan does not wrap promises. Build a plan when the data arrives, and run it. To ignore a stale response, keep a request id in the DOM and guard with `filter`. See section 6 of [the design record](https://github.com/caasi/dom-plan/blob/main/docs/000-design.md).
 
 ## Things to know
 
 - A plan that is never run does nothing, and TypeScript does not report it.
-- dom-plan does not prevent effects inside handlers or `tap`. It is better to write the DOM in `tap`, so that all changes happen in `run`.
-- `Plan.from(el)` selects `el` also after `el` is removed. Add `filter(el => el.isConnected)` to skip it.
+- If a select step matches nothing, the later effects do nothing, and `run` returns an empty array. There is no error.
+- Write to the DOM only in `tap` or in the effect methods, so that all changes happen in `run`. dom-plan cannot stop a handler, a `filter` function, or a `flatMap` function from changing the DOM.
+- `Plan.from(el)` still selects `el` after `el` is removed. Add `filter(el => el.isConnected)` to skip it.
 - Effects keep the native behavior: `addClass('a b')` throws, and `append` moves a node that is already in the document.
-- The differences from jQuery are listed in section 9 of [the design record](docs/000-design.md).
+
+### Differences from jQuery that surprise users most
+
+- Nothing happens before `run`.
+- There are no getters (`.text()`, `.attr(name)`, `.val()`). Read with `run` and plain JavaScript, or inside `tap`.
+- `filter` takes a function only: `filter(el => el.matches('.done'))`.
+- HTML strings are not accepted. Build elements with `Plan.create`.
+- The plan that a handler returns runs after all handlers of the event are called. A later handler does not see the DOM change of an earlier handler.
+
+The full list is in section 9 of [the design record](https://github.com/caasi/dom-plan/blob/main/docs/000-design.md).
 
 ## Examples
 
@@ -106,30 +131,31 @@ dom-plan does not wrap promises. Build a plan when the data arrives, and run it.
 
 ```sh
 npm install
+npx playwright install chromium
 npm run e2e
 ```
 
-The weather checks need the network.
+The script looks for Chromium in the Playwright cache at the Linux path. On other systems, set `CHROME` to the path of a Chrome executable. The weather checks need the network.
 
 ## Development
 
-| Command             | What it does                                  |
-| ------------------- | --------------------------------------------- |
-| `npm test`          | Unit checks with jsdom (31 checks, about 1 s) |
-| `npm run typecheck` | `tsc` with `noEmit`                           |
-| `npm run lint`      | oxlint                                        |
-| `npm run format`    | prettier, writes the files                    |
-| `npm run check`     | typecheck, lint, prettier check, and tests    |
-| `npm run build`     | writes `dist/`                                |
-| `npm run e2e`       | browser checks with Playwright (21 checks)    |
+| Command             | What it does                               |
+| ------------------- | ------------------------------------------ |
+| `npm test`          | Unit checks with jsdom                     |
+| `npm run typecheck` | `tsc` with `noEmit`                        |
+| `npm run lint`      | oxlint                                     |
+| `npm run format`    | prettier, writes the files                 |
+| `npm run check`     | typecheck, lint, prettier check, and tests |
+| `npm run build`     | writes `dist/`                             |
+| `npm run e2e`       | browser checks with Playwright             |
 
 ## Documents
 
-- [AGENTS.md](AGENTS.md): rules for coding agents that use or change dom-plan.
-- [docs/000-design.md](docs/000-design.md): the design record, with each decision and its reason.
-- [docs/known-issues.md](docs/known-issues.md): known limits and facts that are not verified.
-- [docs/todos.md](docs/todos.md): planned work.
+- [AGENTS.md](https://github.com/caasi/dom-plan/blob/main/AGENTS.md): rules for coding agents that use or change dom-plan.
+- [docs/000-design.md](https://github.com/caasi/dom-plan/blob/main/docs/000-design.md): the design record, with each decision and its reason.
+- [docs/known-issues.md](https://github.com/caasi/dom-plan/blob/main/docs/known-issues.md): known limits and facts that are not verified.
+- [docs/todos.md](https://github.com/caasi/dom-plan/blob/main/docs/todos.md): planned work.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/caasi/dom-plan/blob/main/LICENSE).
