@@ -6,8 +6,6 @@ Status: v4, 2026-10-05. The design is implemented in this repository, with 50 un
 
 History: Fable reviewed v1, v2.1, v3, and v3.1. v3 introduced the **step model** (section 4). v3.1 applied the author's decisions D19-D22 and the v3 review. v3.2 renamed the class to `Plan` (D19) and applied the v3.1 review. v4 applied the findings of the spike: `or` became jQuery's `add` and `end`, plus a new `also` (D25). Section 12 lists how each review finding was handled, and the v4 changes.
 
-Origin: dom-plan is the response of the author to [Why don't more developers "use the platform"?](https://nolanlawson.com/2026/10/03/why-dont-more-developers-use-the-platform/) by Nolan Lawson (2026-10-03). The article reminded the author of the faults of jQuery.
-
 ## 0. Core idea
 
 A lazy, light-weight DOM operation language with a monadic interface, inspired by jQuery.
