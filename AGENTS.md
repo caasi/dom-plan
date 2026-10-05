@@ -10,8 +10,8 @@ The core idea has four parts:
 
 - **jQuery-inspired.** Chains, the step model of `pushStack`, and the delegation rules come from jQuery.
 - **Monadic.** Selection is a monad over a list of elements. Effects ride along, like a Writer. `run` is the only exit.
-- **Lazy.** Nothing happens before `run`. The user decides when to leave the lazy part.
-- **Light.** One class and one array of steps. DOM behavior is the native behavior.
+- **Lazy.** To build a plan does not touch the DOM. The user decides when to leave the lazy part.
+- **Light.** One class and one array of steps. DOM behavior is the native behavior. The library does not try to wrap everything: it does not change native behavior to make it easier, and it does not wrap promises.
 
 The design record is `docs/000-design.md`. Known limits are in `docs/known-issues.md`, and planned work is in `docs/todos.md`. The code in `src/index.ts` is the source of truth.
 
@@ -20,14 +20,17 @@ The design record is `docs/000-design.md`. Known limits are in `docs/known-issue
 ### Run the plan
 
 1. End each plan that must change the DOM with `.run(root)`.
-2. If a `mount` handler returns a plan, do not call `run` on it. `mount` runs it in a microtask.
-3. Do not write `$(...)`. Start a plan with `Plan.all`, `Plan.from`, `Plan.create`, or `Plan.none`.
+2. If a `mount` handler returns a plan, do not call `run` on it. `mount` runs it in a microtask, with the mount root as `root`.
+
+A plan that a handler returns can only select under the mount root. `Plan.all('#elsewhere')` outside the mount root selects nothing, and nothing reports it. 3. Do not write `$(...)`. Start a plan with `Plan.all`, `Plan.from`, `Plan.create`, or `Plan.none`.
 
 A plan that is built and never run does nothing. TypeScript does not report this mistake.
 
 ### Select
 
-- Each select step starts from the elements that the previous step held: `find`, `filter`, `closest`, `first`, `add`.
+- Each select step starts from the elements that the previous step held: `flatMap`, `find`, `filter`, `closest`, `first`, `add`. `flatMap` is the primitive of `find`, `filter`, and `closest`.
+- `Plan.from(el)` selects `el` only if `el` is under the root of `run`. Otherwise it selects nothing.
+- `closest` and `flatMap` can select elements outside the root.
 - `end()` goes back to the set of the previous select step, like jQuery `.end()`.
 - `add(css)` takes a selector string only.
 
@@ -45,7 +48,7 @@ const current = Plan.all('#forecast').filter(el => (el as HTMLElement).dataset.r
 current.find('.days').setText('').end().find('.place').setText(place).run(document)
 ```
 
-3. To append several new children, chain `append`. Each call builds a new copy of the child plan.
+3. To append several new children, chain `append`. `append` runs the child plan once for each target, so a child that starts with `Plan.create` builds a new element each time.
 
 ### Effects inside closures
 
@@ -82,7 +85,9 @@ If the request starts in the handler and the promise is already settled, the res
 - `stopImmediatePropagation()` does not stop other handlers at the same level.
 - `focus`, `blur`, `mouseenter`, `mouseleave`, `pointerenter`, and `pointerleave` are delegated with the events that bubble. The handler gets the native event, so `e.type` is, for example, `focusin`.
 - `e.currentTarget` is the root only while the handler runs. If a `tap` needs the root, store it in a `const` in the handler.
-- A handler that returns `false` does not stop the event. Call `e.preventDefault()`.
+- The plans that handlers return run after all handlers of the event are called. A later handler does not see the DOM change of an earlier handler. In jQuery, it does.
+- If a handler throws, the remaining handlers of that event are not called.
+- A handler cannot return `false` (TypeScript rejects it). To stop the default action, call `e.preventDefault()`.
 
 ## Rules for changes to this repository
 

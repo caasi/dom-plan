@@ -48,7 +48,7 @@ const submit: Handler = (e, form) => {
     .removeClass('error')
     .addClass('loading')
     .tap(() => {
-      // Starts after data-req is set, so a settled promise cannot win the race (v3.1 review #1).
+      // Starts after data-req is set, so a settled promise cannot win the race (see section 6 of docs/000-design.md).
       fetchForecast(city)
         .then(f => render(f, current.removeClass('loading').addClass('has-data')).run(document))
         .catch(() =>
