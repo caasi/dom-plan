@@ -1,7 +1,6 @@
 {
   "name": "@caasi/dom-plan",
   "version": "0.0.0",
-  "private": true,
   "description": "A lazy, monadic, jQuery-inspired layer for the DOM",
   "type": "module",
   "main": "./dist/index.js",
