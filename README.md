@@ -15,6 +15,8 @@ plan.run(document) // now the DOM changes
 
 The core is about 1 KB, minified and gzipped.
 
+dom-plan is the response of the author (caasi) to [Why don't more developers "use the platform"?](https://nolanlawson.com/2026/10/03/why-dont-more-developers-use-the-platform/) by Nolan Lawson (2026-10-03). The article reminded the author of the faults of jQuery.
+
 ## Install
 
 ```sh
