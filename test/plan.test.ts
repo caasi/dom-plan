@@ -31,6 +31,8 @@ function same(actual: readonly Element[], expected: readonly Element[]) {
   assert.equal(actual.length, expected.length, 'length')
   actual.forEach((el, i) => assert.equal(el, expected[i], `index ${i}`))
 }
+const click = (el: Element, init: MouseEventInit = {}) =>
+  el.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init }))
 const tick = () => new Promise<void>(r => queueMicrotask(r))
 
 // --- step model and selection ---
@@ -190,20 +192,35 @@ test('R33 end after also goes back into the first plan (steps are concatenated)'
   same(Plan.all('p').also(Plan.all('i')).end().run(root), [$('p')])
 })
 
-test('R34 left identity: from(x).flatMap(f) selects f(x)', () => {
+test('R34 left identity: from(x).flatMap(f) selects f(x), deduplicated in document order', () => {
   const root = fixture()
-  const c1 = $('#c1')
+  const outside = document.createElement('div')
+  outside.innerHTML = '<b></b><i></i>'
+  document.body.append(outside)
+  const [b, i] = [...outside.children]
+  // x is outside the root, and f returns duplicates in reverse order
   same(
-    Plan.from(c1)
-      .flatMap(el => [...el.querySelectorAll('span')])
+    Plan.from(outside)
+      .flatMap(() => [i, b, i])
       .run(root),
-    [...c1.querySelectorAll('span')],
+    [b, i],
   )
 })
-// --- delegation ---
 
-const click = (el: Element, init: MouseEventInit = {}) =>
-  el.dispatchEvent(new MouseEvent('click', { bubbles: true, ...init }))
+test('R35 from(el) still selects el after el.remove(); guard with isConnected', () => {
+  const root = fixture('<p></p>')
+  const p = $('p')
+  p.remove()
+  same(Plan.from(p).run(root), [p])
+  same(
+    Plan.from(p)
+      .filter(el => el.isConnected)
+      .run(root),
+    [],
+  )
+})
+
+// --- delegation ---
 
 test('R17 delegation reaches elements added after mount; plan runs after dispatch', async () => {
   const root = fixture('<ul></ul>')
