@@ -133,6 +133,30 @@ export class Plan {
   }
 
   /**
+   * Binds events on each held element, with jQuery's delegation rules. Binding happens at `run`, like
+   * every effect, so running the plan twice binds twice. An aborted `signal` removes these bindings.
+   */
+  on(bindings: readonly Binding[], opts: { signal?: AbortSignal } = {}) {
+    const copy = bindings.map((b): Binding => [...b])
+    return this.tap(el => {
+      for (const b of copy) bind(el, b, opts.signal)
+    })
+  }
+
+  /**
+   * Removes bindings from each held element: the ones equal to `bindings` (same event, selector and
+   * handler), or all of them when `bindings` is omitted.
+   */
+  off(bindings?: readonly Binding[]) {
+    return this.tap(el =>
+      unbind(
+        el,
+        b => !bindings || bindings.some(x => x[0] === b[0] && x[1] === b[1] && x[2] === b[2]),
+      ),
+    )
+  }
+
+  /**
    * For each held element, runs `child` with that element as root and appends what it returns
    * (native `Element.append`: a node already in the document is moved).
    */
@@ -146,9 +170,10 @@ export class Plan {
   }
 }
 
-/** Return a Plan to have it run in a microtask after the event, or nothing. */
+/** Return a Plan to have it run in a microtask after the event, with the bound element as root. */
 export type Handler = (e: Event, el: Element) => Plan | void
-export type Binding = readonly [event: string, selector: string, handler: Handler]
+/** `selector` null binds to the element itself; a string delegates to its descendants. */
+export type Binding = readonly [event: string, selector: string | null, handler: Handler]
 
 const DELEGATE: Record<string, string> = {
   focus: 'focusin',
@@ -161,44 +186,64 @@ const DELEGATE: Record<string, string> = {
 const ENTER_LEAVE = new Set(['mouseenter', 'mouseleave', 'pointerenter', 'pointerleave'])
 const nativeOf = (t: string) => DELEGATE[t] ?? t
 
-/**
- * Delegates events from `root` to handlers by selector, with jQuery's dispatch rules:
- * every ancestor from the target up to (not including) root is matched, inner first.
- * Returns a function that removes the listeners.
- */
-export function mount(root: ParentNode, bindings: readonly Binding[]): () => void {
-  const table = bindings.map((b): Binding => [...b])
-  for (const [, css] of table) root.querySelector(css) // throw on a bad selector now, not at the first event
-  const ac = new AbortController()
-  for (const native of new Set(table.map(b => nativeOf(b[0])))) {
-    root.addEventListener(
-      native,
-      e => {
-        if (e.type === 'click' && (e as MouseEvent).button >= 1) return
-        for (
-          let n = e.target as Node | null;
-          n && n !== root && !e.cancelBubble;
-          n = n.parentNode
-        ) {
-          if (n.nodeType !== 1) continue
-          const el = n as Element
-          if (e.type === 'click' && (el as HTMLButtonElement).disabled === true) continue
-          for (const [t, css, h] of table) {
-            if (nativeOf(t) !== native || !el.matches(css)) continue
-            if (ENTER_LEAVE.has(t)) {
-              const rel = (e as MouseEvent).relatedTarget as Node | null
-              if (rel && el.contains(rel)) continue
-            }
-            const p = h(e, el)
-            if (p)
-              queueMicrotask(() => {
-                p.run(root)
-              })
-          }
-        }
-      },
-      { signal: ac.signal },
-    )
+// Each element that `on` ran on keeps its own table. The listener of a native type reads the
+// table at dispatch time, so `off` takes effect at once.
+type Bound = { table: Binding[]; listeners: Map<string, (e: Event) => void> }
+const registry = new WeakMap<Element, Bound>()
+
+function bind(host: Element, b: Binding, signal?: AbortSignal) {
+  if (signal?.aborted) return
+  if (b[1] !== null) host.querySelector(b[1]) // throw on a bad selector at run, not at the first event
+  let r = registry.get(host)
+  if (!r) registry.set(host, (r = { table: [], listeners: new Map() }))
+  const entry: Binding = [...b] // own identity, so that the signal removes this entry only
+  r.table.push(entry)
+  const native = nativeOf(b[0])
+  if (!r.listeners.has(native)) {
+    const bound = r
+    const fn = (e: Event) => dispatch(host, bound, native, e)
+    r.listeners.set(native, fn)
+    host.addEventListener(native, fn)
   }
-  return () => ac.abort()
+  signal?.addEventListener('abort', () => unbind(host, x => x === entry), { once: true })
+}
+
+function unbind(host: Element, remove: (b: Binding) => boolean) {
+  const r = registry.get(host)
+  if (!r) return
+  r.table = r.table.filter(b => !remove(b))
+  for (const [native, fn] of r.listeners)
+    if (!r.table.some(b => nativeOf(b[0]) === native)) {
+      host.removeEventListener(native, fn)
+      r.listeners.delete(native)
+    }
+}
+
+// jQuery's dispatch: every ancestor from the target up to the host, inner first. Delegated bindings
+// never match the host itself; direct bindings (selector null) match only the host, so they run last.
+function dispatch(host: Element, r: Bound, native: string, e: Event) {
+  if (e.type === 'click' && (e as MouseEvent).button >= 1) return
+  const table = r.table.slice() // on and off during this dispatch apply to the next one
+  for (
+    let n = e.target as Node | null;
+    n && !e.cancelBubble;
+    n = n === host ? null : n.parentNode
+  ) {
+    if (n.nodeType !== 1) continue
+    const el = n as Element
+    if (e.type === 'click' && (el as HTMLButtonElement).disabled === true) continue
+    for (const [t, css, h] of table) {
+      if (nativeOf(t) !== native) continue
+      if (css === null ? el !== host : el === host || !el.matches(css)) continue
+      if (ENTER_LEAVE.has(t)) {
+        const rel = (e as MouseEvent).relatedTarget as Node | null
+        if (rel && el.contains(rel)) continue
+      }
+      const p = h(e, el)
+      if (p)
+        queueMicrotask(() => {
+          p.run(host)
+        })
+    }
+  }
 }

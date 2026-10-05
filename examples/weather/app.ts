@@ -1,4 +1,4 @@
-import { Plan, mount, type Handler } from '../../src/index.ts'
+import { Plan, type Handler } from '../../src/index.ts'
 
 type Forecast = { place: string; days: { date: string; max: number; min: number }[] }
 
@@ -57,4 +57,6 @@ const submit: Handler = (e, form) => {
     })
 }
 
-mount(document.getElementById('app')!, [['submit', 'form', submit]])
+Plan.all('#app')
+  .on([['submit', 'form', submit]])
+  .run(document)

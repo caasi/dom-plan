@@ -17,7 +17,14 @@ for (const k of [
 ])
   g[k] = (dom.window as any)[k]
 
-const { Plan, mount } = await import('../src/index.ts')
+const { Plan } = await import('../src/index.ts')
+type Binding = import('../src/index.ts').Binding
+
+// Binds through on(), and returns an unbind that goes through off().
+const bindOn = (host: Element, bindings: readonly Binding[]) => {
+  Plan.from(host).on(bindings).run(host)
+  return () => void Plan.from(host).off().run(host)
+}
 
 const FIXTURE = '<div id=c2><div id=c1><span></span></div><span></span><p></p><input></div>'
 
@@ -222,9 +229,9 @@ test('R35 from(el) still selects el after el.remove(); guard with isConnected', 
 
 // --- delegation ---
 
-test('R17 delegation reaches elements added after mount; plan runs after dispatch', async () => {
+test('R17 delegation reaches elements added after on; plan runs after dispatch', async () => {
   const root = fixture('<ul></ul>')
-  const off = mount(root, [['click', 'button', (_e, el) => Plan.from(el).addClass('hit')]])
+  const off = bindOn(root, [['click', 'button', (_e, el) => Plan.from(el).addClass('hit')]])
   const b = document.createElement('button')
   $('ul').append(b)
   b.click()
@@ -237,7 +244,7 @@ test('R17 delegation reaches elements added after mount; plan runs after dispatc
 test('R18 inner first; same element by binding order; stopPropagation stops outer', () => {
   const root = fixture('<div class=outer><div class="inner both"><i></i></div></div>')
   const log: string[] = []
-  const off = mount(root, [
+  const off = bindOn(root, [
     ['click', '.outer', () => void log.push('outer')],
     ['click', '.inner', () => void log.push('inner')],
     ['click', '.both', () => void log.push('both')],
@@ -247,7 +254,7 @@ test('R18 inner first; same element by binding order; stopPropagation stops oute
   off()
 
   log.length = 0
-  const off2 = mount(root, [
+  const off2 = bindOn(root, [
     ['click', '.outer', () => void log.push('outer')],
     ['click', '.inner', e => void (log.push('inner'), e.stopPropagation())],
   ])
@@ -256,23 +263,26 @@ test('R18 inner first; same element by binding order; stopPropagation stops oute
   off2()
 })
 
-test('R20 root itself is never matched; document root matches html', () => {
+test('R20 a delegated binding never matches the host; a direct binding (null) does', () => {
   const root = fixture('<p></p>')
   const log: string[] = []
-  const off = mount(root, [['click', 'section', () => void log.push('section')]])
+  const off = bindOn(root, [
+    ['click', 'section', () => void log.push('delegated section')],
+    ['click', null, () => void log.push('direct')],
+    ['click', 'p', () => void log.push('p')],
+  ])
   click($('p'))
-  assert.equal(log.length, 0)
+  assert.deepEqual(log, ['p', 'direct'], 'delegated inner first, direct on the host last')
+  log.length = 0
+  click(root)
+  assert.deepEqual(log, ['direct'], 'a click on the host itself reaches only the direct binding')
   off()
-  const off2 = mount(document, [['click', 'html', () => void log.push('html')]])
-  click($('p'))
-  assert.deepEqual(log, ['html'])
-  off2()
 })
 
 test('R21 stopImmediatePropagation: same level runs, outer stops', () => {
   const root = fixture('<div class=outer><b class=x></b></div>')
   const log: string[] = []
-  const off = mount(root, [
+  const off = bindOn(root, [
     ['click', '.x', e => void (log.push('1'), e.stopImmediatePropagation())],
     ['click', '.x', () => void log.push('2')],
     ['click', '.outer', () => void log.push('outer')],
@@ -286,7 +296,7 @@ test('R22 currentTarget: root in handler, null in tap after synthetic dispatch',
   const root = fixture('<p></p>')
   let inHandler: unknown,
     inTap: unknown = 'unset'
-  const off = mount(root, [
+  const off = bindOn(root, [
     [
       'click',
       'p',
@@ -306,7 +316,7 @@ test('R22 currentTarget: root in handler, null in tap after synthetic dispatch',
 test('R23 disabled button: ancestor still reached; non-primary click ignored', () => {
   const root = fixture('<div class=box><button disabled>x</button></div>')
   const log: string[] = []
-  const off = mount(root, [
+  const off = bindOn(root, [
     ['click', 'button', () => void log.push('button')],
     ['click', '.box', () => void log.push('box')],
   ])
@@ -321,7 +331,7 @@ test('R23 disabled button: ancestor still reached; non-primary click ignored', (
 test('R24 mouseenter emulation via mouseover + relatedTarget', () => {
   const root = fixture('<div class=box><i class=a></i><i class=b></i></div><p class=out></p>')
   let n = 0
-  const off = mount(root, [['mouseenter', '.box', () => void n++]])
+  const off = bindOn(root, [['mouseenter', '.box', () => void n++]])
   const over = (target: Element, related: Element | null) =>
     target.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, relatedTarget: related }))
   over($('.b'), $('.a'))
@@ -335,7 +345,7 @@ test('R24 mouseenter emulation via mouseover + relatedTarget', () => {
 
 test('R25 preventDefault in handler keeps checkbox unchecked', () => {
   const root = fixture('<input type=checkbox>')
-  const off = mount(root, [['click', 'input', e => void e.preventDefault()]])
+  const off = bindOn(root, [['click', 'input', e => void e.preventDefault()]])
   const cb = $('input') as HTMLInputElement
   cb.click()
   assert.equal(cb.checked, false)
@@ -346,7 +356,7 @@ test('R26 D22: no merging; a throwing plan does not stop the next', async () => 
   const root = fixture('<div class=o><ul class=i><li></li></ul></div>')
   let n = 0
   const base = Plan.all('ul').tap(() => n++)
-  const off = mount(root, [
+  const off = bindOn(root, [
     ['click', '.i', () => base.find('li')],
     ['click', '.o', () => base],
   ])
@@ -363,7 +373,7 @@ test('R26 D22: no merging; a throwing plan does not stop the next', async () => 
   process.removeAllListeners('uncaughtException')
   process.on('uncaughtException', onErr)
   let ran = false
-  const off2 = mount(root, [
+  const off2 = bindOn(root, [
     ['click', '.i', () => Plan.all('p[')],
     ['click', '.o', () => Plan.all('ul').tap(() => (ran = true))],
   ])
@@ -376,27 +386,28 @@ test('R26 D22: no merging; a throwing plan does not stop the next', async () => 
   off2()
 })
 
-test('R27 void return schedules nothing; unmount; bad selector throws at mount', async () => {
+test('R27 void return schedules nothing; off removes all; bad selector throws at run', async () => {
   const root = fixture('<p></p>')
   let n = 0
-  const off = mount(root, [['click', 'p', () => void n++]])
+  const off = bindOn(root, [['click', 'p', () => void n++]])
   click($('p'))
   off()
   click($('p'))
   assert.equal(n, 1)
+  const plan = Plan.from(root).on([['click', '> p', () => {}]])
   assert.throws(
-    () => mount(root, [['click', '> p', () => {}]]),
+    () => plan.run(root),
     (err: any) => err.name === 'SyntaxError',
   )
 })
 
-test('R32 synthetic dispatch, two mounts: both handlers before any plan', async () => {
+test('R32 synthetic dispatch, two bindings on one host: both handlers before any plan', async () => {
   const root = fixture('<p></p>')
   const log: string[] = []
-  const a = mount(root, [
+  const a = bindOn(root, [
     ['click', 'p', () => (log.push('h1'), Plan.all('p').tap(() => log.push('p1')))],
   ])
-  const b = mount(root, [
+  const b = bindOn(root, [
     ['click', 'p', () => (log.push('h2'), Plan.all('p').tap(() => log.push('p2')))],
   ])
   click($('p'))
@@ -405,4 +416,79 @@ test('R32 synthetic dispatch, two mounts: both handlers before any plan', async 
   assert.deepEqual(log, ['h1', 'h2', 'p1', 'p2'])
   a()
   b()
+})
+
+test('R36 on is lazy: nothing is bound before run', () => {
+  const root = fixture('<p></p>')
+  let n = 0
+  const plan = Plan.from(root).on([['click', 'p', () => void n++]])
+  click($('p'))
+  assert.equal(n, 0)
+  plan.run(root)
+  click($('p'))
+  assert.equal(n, 1)
+  Plan.from(root).off().run(root)
+})
+
+test('R37 off(bindings) removes only the equal bindings', () => {
+  const root = fixture('<p></p>')
+  const log: string[] = []
+  const a = () => void log.push('a')
+  const b = () => void log.push('b')
+  Plan.from(root)
+    .on([
+      ['click', 'p', a],
+      ['click', 'p', b],
+    ])
+    .run(root)
+  Plan.from(root)
+    .off([['click', 'p', a]])
+    .run(root)
+  click($('p'))
+  assert.deepEqual(log, ['b'])
+  Plan.from(root).off().run(root)
+})
+
+test('R38 running on twice binds twice; off removes both', () => {
+  const root = fixture('<p></p>')
+  let n = 0
+  const h = () => void n++
+  const plan = Plan.from(root).on([['click', 'p', h]])
+  plan.run(root)
+  plan.run(root)
+  click($('p'))
+  assert.equal(n, 2)
+  Plan.from(root)
+    .off([['click', 'p', h]])
+    .run(root)
+  click($('p'))
+  assert.equal(n, 2)
+})
+
+test('R39 an aborted signal removes the bindings it came with', () => {
+  const root = fixture('<p></p>')
+  const log: string[] = []
+  const ac = new AbortController()
+  Plan.from(root)
+    .on([['click', 'p', () => void log.push('signal')]], { signal: ac.signal })
+    .run(root)
+  Plan.from(root)
+    .on([['click', 'p', () => void log.push('kept')]])
+    .run(root)
+  ac.abort()
+  click($('p'))
+  assert.deepEqual(log, ['kept'])
+  Plan.from(root).off().run(root)
+})
+
+test('R40 on binds on each held element; a handler plan runs with that element as root', async () => {
+  const root = fixture('<ul id=a><li></li></ul><ul id=b><li></li></ul>')
+  Plan.all('ul')
+    .on([['click', 'li', () => Plan.all('li').addClass('hit')]])
+    .run(root)
+  click($('#a li'))
+  await tick()
+  assert.equal($('#a li').className, 'hit')
+  assert.equal($('#b li').className, '', 'the plan ran with #a as root')
+  Plan.all('ul').off().run(root)
 })

@@ -1,4 +1,4 @@
-import { Plan, mount, type Handler } from '../../src/index.ts'
+import { Plan, type Handler } from '../../src/index.ts'
 
 // All state lives in the DOM: li.done, li[data-id], ul[data-filter].
 let seq = 0
@@ -63,12 +63,14 @@ const endEdit: Handler = (e, input) => {
   return commitEdit(input as HTMLInputElement)
 }
 
-mount(document.querySelector('.todoapp')!, [
-  ['submit', 'form.new', add],
-  ['change', '.toggle', toggle],
-  ['click', '.delete', remove],
-  ['click', '.filters button', filter],
-  ['dblclick', '.title', startEdit],
-  ['keydown', '.edit', endEdit],
-  ['blur', '.edit', endEdit],
-])
+Plan.all('.todoapp')
+  .on([
+    ['submit', 'form.new', add],
+    ['change', '.toggle', toggle],
+    ['click', '.delete', remove],
+    ['click', '.filters button', filter],
+    ['dblclick', '.title', startEdit],
+    ['keydown', '.edit', endEdit],
+    ['blur', '.edit', endEdit],
+  ])
+  .run(document)
