@@ -4,7 +4,7 @@ Work that is planned but not done. Known limits and open questions are in `known
 
 ## Before publication
 
-- [ ] Write a `README.md`: the core idea, an install command, one example, and a link to `AGENTS.md` and the design record.
+- [x] Write a `README.md`: the core idea, an install command, one example, and a link to `AGENTS.md` and the design record.
 - [ ] Do the review with `review-loop`.
 - [ ] Create the GitHub repository and add a remote.
 - [ ] Decide if `dist/` is published as `tsc` output (6.4 KB) or minified (about 1.1 KB with gzip). The current decision is plain `tsc` output, because the bundler of the user minifies it.
