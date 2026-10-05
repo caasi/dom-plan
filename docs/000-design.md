@@ -1,70 +1,73 @@
-# dom-plan：一個延後執行的 jQuery 子集（設計草稿 v4）
+# dom-plan: a deferred subset of jQuery (design record, v4)
 
-狀態：草稿 v4，2026-10-05。已實作在本 repo（28 項 jsdom 單元檢查、21 項瀏覽器 e2e）。套件名稱 `@caasi/dom-plan`。**程式碼以 `src/index.ts` 為準**，本文件只記決定與理由。
-歷史：v1、v2.1、v3 各經一輪 Fable review。v3 的主要變動是**步驟模型**（第 4 節）。v3.1 依 user 的決定（D19-D22）與 v3 review 修正；v3.2 改名為 `Plan`（D19）並依 v3.1 review 修正。v4 依 spike 的發現，把 `or` 拆成 jQuery 的 `add`、`end` 與新的 `also`（D25）。第 12 節列出四輪 review 的處理狀態與 v4 的變更。
+> Note: Claude Opus 5.5 wrote this document with the author (caasi), from their design sessions. Claude Fable 5.1 reviewed four drafts. In the "Decided by" column, "author" means caasi and "Claude" means the model.
 
-## 0. 核心思想
+Status: v4, 2026-10-05. The design is implemented in this repository, with 28 unit checks in jsdom and 21 browser checks. The package name is `@caasi/dom-plan`. **The code in `src/index.ts` is the source of truth.** This document records the decisions and the reasons for them.
 
-受 jQuery 啟發，為 DOM 提供一層 monadic 介面的 lazy、輕量操作語言。
+History: Fable reviewed v1, v2.1, v3, and v3.1. v3 introduced the **step model** (section 4). v3.1 applied the author's decisions D19-D22 and the v3 review. v3.2 renamed the class to `Plan` (D19) and applied the v3.1 review. v4 applied the findings of the spike: `or` became jQuery's `add` and `end`, plus a new `also` (D25). Section 12 lists how each review finding was handled, and the v4 changes.
 
-- **jQuery 啟發**：chain style、步驟模型（`pushStack`）、委派規則照抄 jQuery。
-- **monadic**：選取是以 list 為基礎的 monad；效果像 Writer 一樣跟著走；`run` 是唯一的出口。
-- **lazy**：建計畫不碰 DOM，`run` 才執行。何時離開 lazy 由使用者決定（D21）。
-- **輕量**：一個類別、一個步驟陣列；DOM 行為照原生 API（D20），不追求完美包裝。
+## 0. Core idea
 
-## 1. 目標
+A lazy, light-weight DOM operation language with a monadic interface, inspired by jQuery.
 
-- jQuery 的子集，用來**增強一頁現成的 HTML**。只針對 DOM，不做通用的樹語言（D23）。
-- 一個值 = 一份延後執行的**計畫**：選取元素、累積效果、也能從零建樹。在 `run` 之前什麼都不發生（Haskell `runIO` 的思路）。
-- chain style，每一步回傳新的 instance；對外的值 immutable（型別層級的 `readonly`）。
-- 照 Paul Hudak 的作法：能用 list 與函式表達就不新增型別。計畫就是一個步驟陣列。
-- TypeScript，架構好懂、不膨脹。核心估計一兩百行以內（未驗證）。
+- **jQuery-inspired**: chain style, the step model (`pushStack`), and the delegation rules come from jQuery.
+- **Monadic**: selection is a monad over a list. Effects ride along, like a Writer. `run` is the only exit.
+- **Lazy**: to build a plan does not touch the DOM. `run` does the work. The user decides when to leave the lazy part (D21).
+- **Light**: one class and one array of steps. DOM behavior is the native behavior (D20). The library does not try to wrap everything.
 
-## 2. 非目標
+## 1. Goals
 
-通用的樹（hast、不可變樹）、單一狀態來源（Model）、虛擬 DOM、morph、全域訂閱、`Msg` 分派、跨 `run` 的 continuation、非同步的包裝、window 層級的事件（`resize`、window 的 `scroll`）。
+- A subset of jQuery that **enhances existing HTML on a page**. It is for the DOM only, not a general tree language (D23).
+- A value is a deferred **plan**: it selects elements, collects effects, and can build a tree from nothing. Nothing happens before `run`. This follows the idea of Haskell `runIO`.
+- Chain style. Each step returns a new instance. Values are immutable at the type level (`readonly`).
+- The approach of Paul Hudak: when a list and functions can express a thing, do not add a type. A plan is an array of steps.
+- TypeScript, with an architecture that is easy to read and stays small.
 
-## 3. 決定
+## 2. Non-goals
 
-| #   | 決定                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | 由誰決定                                                |
-| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| D1  | 事件用委派，事件觸發時才解析 selector                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | user                                                    |
-| D2  | 綁定在 `mount` 時宣告並複製（陣列與每個 tuple），之後不變；`mount` 時驗證每個 selector；`mount` 回傳 unmount 函式                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | agent（Fable S2、P2、v3 #8），user 未反對               |
-| D3  | 命令式副作用與 DOM 改寫同為描述，只有 `run` 執行                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | user                                                    |
-| D4  | 不要另外的 immutable tree、不要 morph；`run` 直接對 live DOM 套用                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | agent，user 未反對                                      |
-| D5  | **出口只有 `run(root)`**：重播所有步驟，回傳最後一步的元素陣列                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | user                                                    |
-| D6  | chain style，每一步回傳新的 instance                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | user                                                    |
-| D7  | 空 selection 不做事                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | user                                                    |
-| D8  | **步驟模型**：每個選取步驟從**上一步拿到手的元素**算出新集合，只在 `run` 時算一次；效果作用在當下這一步的集合上。效果看得到前面對 DOM 的改動，但「選到哪些元素」在該步就固定。等同 jQuery 的 `pushStack`，只是延後到 `run` 才重播                                                                                                                                                                                                                                                                                                                                                                      | user                                                    |
-| D9  | 每個選取步驟之後去重複並排成**文件順序**（`compareDocumentPosition`），照 jQuery `uniqueSort`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | user                                                    |
-| D10 | 委派逐層比對 `event.target` 到 root（不含）之間的每個祖先，內層先執行；同層依綁定順序；`stopPropagation` 停止外層                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | user                                                    |
-| D11 | 委派不比對 root 本身                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | user                                                    |
-| D12 | 不冒泡事件照 jQuery 改綁（`focus`→`focusin`、`blur`→`focusout`、`mouseenter`→`mouseover`、`mouseleave`→`mouseout`、`pointerenter`→`pointerover`、`pointerleave`→`pointerout`）；enter/leave 用 `relatedTarget` 模擬。依原生型別分組，一個原生型別只裝一個 listener                                                                                                                                                                                                                                                                                                                                     | user                                                    |
-| D13 | **closure 裡的副作用：不阻止，使用者要知道自己在做什麼。** handler、`tap` 的 callback、`flatMap`／`filter` 的函式都是一般 closure，庫不檢查、不包裝、不阻擋其中的任何操作（寫 DOM、發請求、在 `tap` 裡 `run`、把元素存到外部）。型別也擋不住，這是刻意的，不是缺口。**範例的慣例**：handler 只呼叫 `e` 的方法並讀取值，其他副作用放進 `tap`；破例時在程式旁註明                                                                                                                                                                                                                                        | user                                                    |
-| D14 | ~~`or` 的共同前段只執行一次~~：v4 拿掉 `or`，此決定作廢（D25）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | user                                                    |
-| D15 | 不提供 Rust 式的拆包函式；`run` 回傳普通陣列，沒有效果的計畫跑 `run` 就是純讀取                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | agent，user 未反對                                      |
-| D16 | 效果原語叫 `tap`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | user                                                    |
-| D17 | 不支援 `stopImmediatePropagation`：同層其餘 handler 照樣執行。呼叫它仍會設 `cancelBubble`，所以外層會停                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | user                                                    |
-| D18 | handler 收到原生事件，不改寫：綁 `focus` 收到 `e.type === 'focusin'`；被比對到的元素是第二個參數 `el`。`e.currentTarget` **只在 handler 執行期間**保證是 root；handler 回傳後的值沒有保證：真實使用者事件在每個 listener 之後就跑 microtask，所以計畫執行時仍是 root，`dispatchEvent`／`el.click()` 則是 `null`。`tap` 需要 root 時，在 handler 裡先存到 `const`                                                                                                                                                                                                                                       | user（`currentTarget` 部分為 Fable S3、v3 #4、v3.1 #2） |
-| D19 | 套件 `@caasi/dom-plan`；入口就是類別 `Plan` 的靜態方法（`Plan.all`、`Plan.from`、`Plan.create`、`Plan.none`），不另外匯出入口物件。理由：agent 看到 `$` 會套用 jQuery「立即執行」的心智模型；`Plan` 讓型別、入口、文件同一個詞，並提醒要 `run`                                                                                                                                                                                                                                                                                                                                                         | user                                                    |
-| D20 | 從零建樹：`Plan.create(tag)` 是一份計畫，起點是新建的元素。`append(child)` 對每個目標各 `run` 一次 `child`（以目標為 root），把回傳的元素交給原生 `Element.append`：**行為照 DOM API**，已在文件中的節點會被搬移，庫不另外過濾或複製                                                                                                                                                                                                                                                                                                                                                                   | user                                                    |
-| D21 | **不規定非同步的寫法，不追求完美包裝。** 使用者可以多次建計畫、多次 `run`，也可以在 `tap` 或 `fetch().then()` 裡 `run`；何時離開 lazy 由使用者決定。計畫裡不出現 Promise                                                                                                                                                                                                                                                                                                                                                                                                                               | user                                                    |
-| D22 | **不合併**：每個 handler 回傳的計畫各排一個 microtask，依呼叫順序（內層先、同層依綁定順序）執行。一個計畫丟錯，不影響其他計畫                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | user                                                    |
-| D23 | 只針對 DOM，不做通用樹                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | user                                                    |
-| D24 | 效果方法照原生 API 的行為：`addClass('a b')` 會在 `run` 時丟 `InvalidCharacterError`（`DOMTokenList` 不接受空白），不幫使用者切字串                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | user（Fable v3 #6，照 D20 的原則）                      |
-| D25 | **拿掉 `or`，照 jQuery 拆成三個**：`add(css)` 聯集一個 selector（jQuery `.add`，只收選取、不收帶效果的 Plan）；`end()` 回到上一步的集合（jQuery `.end`，`exec` 用堆疊實作 `prevObject`）；`also(next)` 在同一次 `run` 裡接著執行 `next`，回傳 `next` 的元素。理由：spike 的兩個範例共 11 處 `or` 全是「依序執行」，沒有一處是聯集；而 `or` 同時扛聯集、依序、共同前段三件事，設計者自己都在天氣 app 寫錯（守衛被從 root 起算的分支繞過）。`also` 是 jQuery 沒有的，因為 jQuery 立即執行，兩行敘述就是依序；lazy 才需要它。所有 Plan 都從起點開始（建構子 private），所以 `next` 不會接續 `this` 的集合 | user                                                    |
-| D26 | **不做效果順序的組合**（排程、交錯、非同步的順序）：那需要 lazy stream。`also` 只是步驟串接（Writer 的 monoid 串接），照寫的順序執行                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | user                                                    |
+General trees (hast, immutable trees), a single source of state (a Model), a virtual DOM, morphing, global subscriptions, `Msg` dispatch, continuations across `run`, a wrapper for asynchronous work, and window-level events (`resize`, `scroll` on the window).
 
-## 4. 核心：計畫就是步驟陣列
+## 3. Decisions
 
-程式碼見 `src/index.ts`（137 行實際程式碼，不含註解與空行）。結構：
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Decided by                                                  |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- |
+| D1  | Events use delegation. The selector is resolved when the event occurs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | author                                                      |
+| D2  | `mount` copies the bindings (the array and each tuple) and they do not change after that. `mount` validates each selector. `mount` returns an unmount function.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Claude (Fable S2, P2, v3 #8); the author did not object     |
+| D3  | Imperative effects and DOM changes are both descriptions. Only `run` executes them.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | author                                                      |
+| D4  | No separate immutable tree and no morphing. `run` applies the effects to the live DOM.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Claude; the author did not object                           |
+| D5  | **The only exit is `run(root)`.** It replays all steps and returns the elements of the last step.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | author                                                      |
+| D6  | Chain style. Each step returns a new instance.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | author                                                      |
+| D7  | An empty selection does nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | author                                                      |
+| D8  | **Step model**: each select step computes a new set from **the elements that the previous step held**. This occurs once, at `run`. Effects act on the set of the current step. Effects see the earlier changes to the DOM, but the selected elements are fixed at their step. This is jQuery's `pushStack`, replayed at `run`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | author                                                      |
+| D9  | After each select step, the set is deduplicated and sorted in **document order** (`compareDocumentPosition`), like jQuery `uniqueSort`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | author                                                      |
+| D10 | Delegation matches each ancestor between `event.target` and the root (the root is not included). Inner handlers run first. At one level, handlers run in binding order. `stopPropagation` stops the outer levels.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | author                                                      |
+| D11 | Delegation never matches the root itself.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | author                                                      |
+| D12 | Events that do not bubble are bound like in jQuery: `focus`→`focusin`, `blur`→`focusout`, `mouseenter`→`mouseover`, `mouseleave`→`mouseout`, `pointerenter`→`pointerover`, `pointerleave`→`pointerout`. Enter and leave are emulated with `relatedTarget`. Bindings are grouped by native event type, with one listener for each native type.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | author                                                      |
+| D13 | **Effects inside closures are not prevented. The user must know what they do.** Handlers, the callback of `tap`, and the functions of `flatMap` and `filter` are ordinary closures. The library does not check, wrap, or block any operation in them: DOM writes, requests, `run` inside `tap`, or elements stored outside. The types cannot block these operations either. This is intentional, not a gap. **Convention for the examples**: a handler only calls methods on the event and reads values. Other effects go into `tap`. An exception gets a comment.                                                                                                                                                                                                                                                                                                                                                                         | author                                                      |
+| D14 | ~~The common prefix of `or` runs once.~~ Removed in v4 together with `or` (D25).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | author                                                      |
+| D15 | No Rust-style unwrap function. `run` returns a plain array. A plan with no effects is a plain read.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Claude; the author did not object                           |
+| D16 | The effect primitive is named `tap`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | author                                                      |
+| D17 | `stopImmediatePropagation` is not supported: the other handlers at the same level still run. The call still sets `cancelBubble`, so the outer levels stop.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | author                                                      |
+| D18 | Handlers get the native event, not a rewritten one. A `focus` binding gets `e.type === 'focusin'`. The matched element is the second argument, `el`. `e.currentTarget` is the root **only while the handler runs**. After the handler returns, its value is not defined. For a real user event, the browser runs microtasks after each listener, so the plan still sees the root. After `dispatchEvent` or `el.click()`, the value is `null`. If a `tap` needs the root, store it in a `const` in the handler.                                                                                                                                                                                                                                                                                                                                                                                                                             | author (the `currentTarget` part: Fable S3, v3 #4, v3.1 #2) |
+| D19 | Package `@caasi/dom-plan`. The entry points are the static methods of the class `Plan` (`Plan.all`, `Plan.from`, `Plan.create`, `Plan.none`). There is no separate entry object. Reason: an agent that sees `$` applies the jQuery model of immediate execution. With `Plan`, the type, the entry point, and the documentation use one word, and the word is a reminder to call `run`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | author                                                      |
+| D20 | Trees from nothing: `Plan.create(tag)` is a plan that starts from a new element. `append(child)` runs `child` once for each target, with the target as the root. It gives the returned elements to the native `Element.append`. **The behavior is the DOM behavior**: a node that is already in the document moves. The library does not filter or copy.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | author                                                      |
+| D21 | **No required style for asynchronous work, and no attempt at a complete wrapper.** A user can build many plans and run them many times, and can call `run` inside `tap` or `fetch().then()`. The user decides when to leave the lazy part. No Promise appears inside a plan.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | author                                                      |
+| D22 | **No merging**: the plan of each handler gets its own microtask. The plans run in call order (inner first, then binding order). An error in one plan does not stop the others.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | author                                                      |
+| D23 | DOM only. No general tree language.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | author                                                      |
+| D24 | Effect methods keep the native behavior. `addClass('a b')` throws `InvalidCharacterError` at `run`, because `DOMTokenList` does not accept spaces. The library does not split the string.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | author (Fable v3 #6, same principle as D20)                 |
+| D25 | **`or` is removed and split into three methods, like jQuery.** `add(css)` adds the elements of a selector (jQuery `.add`; it takes a selection only, not a plan with effects). `end()` goes back to the previous set (jQuery `.end`; `exec` keeps a stack for `prevObject`). `also(next)` runs `next` after this plan in the same `run` and returns the elements of `next`. Reason: in the spike, all 11 uses of `or` in the two examples were sequencing, and none was a union. `or` carried union, sequencing, and a shared-prefix rule at the same time. Its designers made an error with it in the weather app: a guard was bypassed by a branch that selected again from the root. jQuery has no `also`, because jQuery runs each line at once, so two statements are already in order. Laziness needs it. Every plan starts from a starting point (the constructor is private), so `next` never continues from the set of this plan. | author                                                      |
+| D26 | **No composition of effect order** (scheduling, interleaving, asynchronous order). That needs a lazy stream. `also` only concatenates steps (the monoid of the Writer), in the written order.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | author                                                      |
 
-- `Step` 只有三種：`q`（選取，從上一步的集合算出新集合）、`fx`（效果，作用在當下集合的每個元素）、`end`（回到上一步的集合）。
-- `exec(steps, root)` 依序處理步驟；每個 `q` 步驟前把當下集合推進堆疊，`end` 時彈出（jQuery 的 `prevObject`）；每個 `q` 之後去重複並排成文件順序（D9）。
-- `Plan` 只有一個欄位 `steps`（private）。起點：`Plan.all`、`Plan.from`、`Plan.create`、`Plan.none`。選取：`flatMap`、`find`、`filter`、`closest`、`first`、`add`、`end`。接續：`also`。效果：`tap` 與一行包裝（`addClass`、`removeClass`、`toggleClass`、`attr`、`removeAttr`、`setText`、`remove`、`append`）。出口：`run(root)`。
-- 不能有名為 `then` 的方法（Fable v3 #2：會讓 Plan 成為 thenable）。
+## 4. The core: a plan is an array of steps
 
-### 用法
+The code is in `src/index.ts` (137 lines of code, without comments and empty lines). Structure:
+
+- `Step` has three kinds: `q` (select: compute a new set from the previous set), `fx` (effect: act on each element of the current set), and `end` (go back to the previous set).
+- `exec(steps, root)` processes the steps in order. Before each `q` step, it pushes the current set onto a stack. `end` pops it (jQuery's `prevObject`). After each `q` step, it deduplicates and sorts the set in document order (D9).
+- `Plan` has one field, `steps` (private). Starting points: `Plan.all`, `Plan.from`, `Plan.create`, `Plan.none`. Selection: `flatMap`, `find`, `filter`, `closest`, `first`, `add`, `end`. Sequencing: `also`. Effects: `tap` and one-line wrappers (`addClass`, `removeClass`, `toggleClass`, `attr`, `removeAttr`, `setText`, `remove`, `append`). Exit: `run(root)`.
+- `Plan` must not have a method named `then` (Fable v3 #2: a `then` method makes every plan a thenable).
+
+### Usage
 
 ```ts
 // removeClass then addClass act on the same held set (D8)
@@ -84,79 +87,34 @@ Plan.all('ul.todos').append(item(id, text)).run(document)
 const [first] = Plan.all('.chart').run(document)
 ```
 
-### 語意說明
+### Semantics
 
-- **monad 是選取那一半。** 只含選取步驟的計畫是 `root → 有序集合` 的函式：`flatMap` 結合律、右單位律成立。效果步驟像 Writer 一樣跟著走；`also` 是 Writer 的 monoid 串接。right zero 不成立：`Plan.all('p').addClass('x').filter(() => false)` 與 `Plan.none` 都回傳 `[]`，但前者會加 class。
-- **`Plan.from(el)` 不是 `return`**：它多檢查 `r.contains(el)`。
-- **計畫是查詢，不是結果集合**：`run` 兩次會重新選取、重新執行效果。
-- **`append` 的 child** 回傳的是**最後一步**的元素；以目標為 root，所以 `append(Plan.all('.x'))` 是把目標底下的 `.x` 搬到目標最後面。
-- **建樹的劇本在節點未接進文件時執行**，`focus` 等需要節點在文件中的操作在劇本裡無效。
-- **`closest` 與 `flatMap` 可能選到 root 以外的元素**；jQuery 也是這樣。
-- **依序動兩組元素用 `also`**：`Plan.from(btn).closest('li').remove().also(count)`，`remove` 先執行，`count` 後執行。
-- **守衛要用 `end` 分支，不要用 `also` 開新的起點**：`guarded.find('.days').setText('').end().find('.place').setText(p)`。`also(Plan.all(...))` 從 root 重新選取，會繞過守衛（spike 在天氣 app 實際踩到）。
-- **要接上多個新的子元素，串接 `append`**：`days.reduce((p, d) => p.append(item(d)), forecast.find('.days').setText(''))`。
-- **`Plan.from(el)` 在 `el` 被移除後回傳 `[]`**（不在 root 下）。
+- **The monad is the selection part.** A plan with only select steps is a function from the root to an ordered set. `flatMap` is associative and has a right identity. Effect steps ride along like a Writer, and `also` is the monoid concatenation of the Writer. Right zero does not hold: `Plan.all('p').addClass('x').filter(() => false)` and `Plan.none` both return `[]`, but the first one adds a class.
+- **`Plan.from(el)` is not `return`**: it also checks `r.contains(el)`.
+- **A plan is a query, not a result set**: two calls to `run` select again and repeat the effects.
+- **The child of `append`** returns the elements of its **last step**. The target is its root, so `append(Plan.all('.x'))` moves the `.x` elements under the target to the end of the target.
+- **A build script runs before its node is in the document.** Operations that need a node in the document, such as `focus`, have no effect in it.
+- **`closest` and `flatMap` can select elements outside the root.** jQuery does the same.
+- **To change two groups of elements in order, use `also`**: `Plan.from(btn).closest('li').remove().also(count)`. `remove` runs first, then `count`.
+- **To keep a guard, branch with `end`, not with a new starting point in `also`**: `guarded.find('.days').setText('').end().find('.place').setText(p)`. `also(Plan.all(...))` selects again from the root and bypasses the guard. The spike hit this error in the weather app.
+- **To append several new children, chain `append`**: `days.reduce((p, d) => p.append(item(d)), forecast.find('.days').setText(''))`.
+- **`Plan.from(el)` returns `[]` after `el` is removed** (it is not under the root).
 
-## 5. 委派
+## 5. Delegation
+
+The code is `mount` in `src/index.ts`. Its types:
 
 ```ts
 type Handler = (e: Event, el: Element) => Plan | void
 type Binding = readonly [event: string, selector: string, handler: Handler]
-
-const DELEGATE: Record<string, string> = {
-  focus: 'focusin',
-  blur: 'focusout',
-  mouseenter: 'mouseover',
-  mouseleave: 'mouseout',
-  pointerenter: 'pointerover',
-  pointerleave: 'pointerout',
-}
-const ENTER_LEAVE = new Set(['mouseenter', 'mouseleave', 'pointerenter', 'pointerleave'])
-const nativeOf = (t: string) => DELEGATE[t] ?? t
-
-export function mount(root: ParentNode, bindings: readonly Binding[]): () => void {
-  const table = bindings.map((b): Binding => [...b]) // D2
-  for (const [, css] of table) root.querySelector(css) // D2: throws here, not at the first event
-  const ac = new AbortController()
-  for (const native of new Set(table.map(b => nativeOf(b[0])))) {
-    // D12
-    root.addEventListener(
-      native,
-      e => {
-        if (e.type === 'click' && (e as MouseEvent).button >= 1) return
-        for (
-          let n = e.target as Node | null;
-          n && n !== root && !e.cancelBubble;
-          n = n.parentNode
-        ) {
-          // D10, D11
-          if (n.nodeType !== 1) continue
-          const el = n as Element
-          if (e.type === 'click' && (el as HTMLButtonElement).disabled === true) continue
-          for (const [t, css, h] of table) {
-            if (nativeOf(t) !== native || !el.matches(css)) continue
-            if (ENTER_LEAVE.has(t)) {
-              const rel = (e as MouseEvent).relatedTarget as Node | null
-              if (rel && el.contains(rel)) continue
-            }
-            const p = h(e, el)
-            if (p)
-              queueMicrotask(() => {
-                p.run(root)
-              }) // D22: no merging
-          }
-        }
-      },
-      { signal: ac.signal },
-    )
-  }
-  return () => ac.abort()
-}
+function mount(root: ParentNode, bindings: readonly Binding[]): () => void
 ```
 
-## 6. 非同步（D21）
+`mount` copies and validates the bindings (D2). It adds one listener for each native event type (D12). For each event, it walks from `event.target` up to the root, without the root (D10, D11). At each element, it matches the bindings in order. A handler that returns a plan gets its own microtask (D22). Like jQuery, `mount` ignores a `click` with `button >= 1`, and a `click` on a disabled element.
 
-庫不規定寫法。天氣 app 的 spike 採最直接的寫法：handler 讀值；請求在 `tap` 裡、`data-req` 設好之後才發出；回應回來後在 `then` 裡 `run`。
+## 6. Asynchronous work (D21)
+
+The library does not require a style. The weather app in the spike uses the most direct style: the handler reads values; the request starts in `tap`, after `data-req` is set; when the response arrives, a plan runs in `then`.
 
 ```ts
 let seq = 0
@@ -183,222 +141,223 @@ const onSubmit: Handler = (e, form) => {
 }
 ```
 
-- 請求必須在 `tap` 裡發出：若在 handler 裡直接發出，而 promise 已經 settle（快取、空字串直接 reject、測試裡的 `Promise.resolve`），`then` 會比 `mount` 排的計畫先執行，找不到 `data-req`，畫面停在 loading（Fable v3.1 #1）。放在 `tap` 也符合 D13 的慣例。
-- race condition：request id 存在 DOM，舊回應被 `filter` 擋掉（stale 時是空集合，D7）。
-- `#forecast` 必須在 mount 的 root 底下，因為 handler 回傳的計畫以 mount 的 root 執行。
-- 另一種寫法是把回應以 `CustomEvent` 派發回元素，再由 binding 接手。這時派發事件的元素**不能是 mount 的 root**（D11）。spike 先不做這個寫法。
+- The request must start in `tap`. If it starts in the handler and the promise is already settled (a cache, an immediate rejection of an empty string, `Promise.resolve` in a test), `then` runs before the plan that `mount` scheduled. The guard finds no `data-req`, and the page stays in the loading state (Fable v3.1 #1). A start in `tap` also obeys the convention of D13.
+- Race condition: the request id is stored in the DOM. The `filter` blocks an old response, because the set is empty (D7).
+- `#forecast` must be under the mount root, because the plan that a handler returns runs with the mount root.
+- An alternative is to dispatch the response as a `CustomEvent` on the element, and let a binding handle it. In that case, the element that dispatches the event **must not be the mount root** (D11). The spike does not use this alternative.
 
-## 7. 和 Elm 的對照
+## 7. Comparison with Elm
 
-|          | Elm                        | dom-plan                 |
-| -------- | -------------------------- | ------------------------ |
-| 狀態     | 獨立 `Model`               | DOM 本身                 |
-| 更新     | 重算 `view`，虛擬 DOM 比對 | 只改被選到的節點         |
-| 事件     | `Msg` + `update`           | 委派表，handler 回傳計畫 |
-| 副作用   | `Cmd`，runtime 執行        | 計畫，`run` 執行         |
-| 非同步   | `Cmd` 產生 `Msg`           | 不規定；使用者自己 `run` |
-| 全域訂閱 | `Sub`                      | 無                       |
+|                      | Elm                                        | dom-plan                                     |
+| -------------------- | ------------------------------------------ | -------------------------------------------- |
+| State                | A separate `Model`                         | The DOM itself                               |
+| Update               | Computes `view` again, diffs a virtual DOM | Changes only the selected nodes              |
+| Events               | `Msg` + `update`                           | A delegation table; a handler returns a plan |
+| Effects              | `Cmd`, run by the runtime                  | A plan, run by `run`                         |
+| Asynchronous work    | A `Cmd` produces a `Msg`                   | No required style; the user calls `run`      |
+| Global subscriptions | `Sub`                                      | None                                         |
 
-Elm 一欄依 agent 對 Elm 0.19 的理解，未回查文件。
+The Elm column comes from the knowledge of Claude about Elm 0.19. It was not checked against the Elm documentation.
 
-## 8. jQuery 原始碼依據（jquery/jquery main，經 `gh api` 取得，2026-10-05）
+## 8. jQuery source references (jquery/jquery main, read with `gh api` on 2026-10-05)
 
-| 決定               | jQuery 的做法                                                                                                                     | 位置                                                                     |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| D8                 | 選取方法呼叫 `pushStack`：以新的元素集合建新物件，`prevObject` 指向上一步；效果方法立即作用並 `return this`。沒有合併或最佳化規則 | `src/core.js` 57-67 行；`src/attributes/classes.js`                      |
-| D9                 | `jQuery.uniqueSort` 以 `compareDocumentPosition` 排序並去重複                                                                     | `src/traversing.js` 65、91、180 行；`src/traversing/findFilter.js` 71 行 |
-| D10、D11           | 從 `event.target` 往上走到 `this`（不含），每層比對所有委派 selector；`isPropagationStopped` 停止外層                             | `src/event.js` 約 304-316、350-398 行                                    |
-| D12                | `focus`/`blur` 用 `focusin`/`focusout`；enter/leave 用 over/out，`relatedTarget` 檢查在每個 handleObj 的 `handle` 裡              | `src/event.js` 約 736、807-835 行                                        |
-| 第 5 節 click 過濾 | 略過 `button >= 1` 的 click 與 disabled 元素上的 click                                                                            | `src/event.js` 約 355-366 行                                             |
+| Decision                  | What jQuery does                                                                                                                                                                                     | Location                                                                      |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| D8                        | Selection methods call `pushStack`: a new object holds the new set, and `prevObject` points to the previous step. Effect methods act at once and `return this`. There is no merging or optimization. | `src/core.js` lines 57-67; `src/attributes/classes.js`                        |
+| D9                        | `jQuery.uniqueSort` sorts with `compareDocumentPosition` and removes duplicates.                                                                                                                     | `src/traversing.js` lines 65, 91, 180; `src/traversing/findFilter.js` line 71 |
+| D10, D11                  | It walks from `event.target` up to `this` (not included) and matches all delegated selectors at each level. `isPropagationStopped` stops the outer levels.                                           | `src/event.js` near lines 304-316, 350-398                                    |
+| D12                       | `focus` and `blur` use `focusin` and `focusout`. Enter and leave use over and out, with a `relatedTarget` check in the `handle` of each handleObj.                                                   | `src/event.js` near lines 736, 807-835                                        |
+| Click filter in section 5 | It ignores a `click` with `button >= 1` and a `click` on a disabled element.                                                                                                                         | `src/event.js` near lines 355-366                                             |
+| D25                       | `.add(selector)` merges the current set with the elements of a selector, then calls `uniqueSort` and `pushStack`. `.end()` returns `prevObject`.                                                     | `src/traversing.js` lines 89-95; `src/core.js` lines 110-112                  |
 
-## 9. 給使用者文件：和 jQuery 不同的地方
+## 9. Differences from jQuery (for the user documentation)
 
-（取自 Fable v3 review 第 3 節，寫進日後的使用文件。）
+Taken from section 3 of the Fable v3 review.
 
-- 在 `run` 之前什麼都不發生。
-- `Plan.all('.a')` 在 `run` 時才選取；jQuery 的 `const $a = $('.a')` 是建立當下就固定的集合。
-- 有 `end()`；沒有 `.prevObject`、`.addBack()`。`add` 只收 selector 字串，不收元素或 jQuery 物件。
-- `also(next)` 是 jQuery 沒有的：lazy 才需要明寫「接著做」。
-- 沒有讀值方法（`.text()`、`.attr(n)`、`.val()`、`.hasClass()`）：用 `run` 加一般 JS，或在 `tap` 裡讀。
-- `addClass('a b')` 會丟錯（D24）。
-- `filter` 只接受函式：`filter(el => el.matches('.done'))`。
-- 不接受 HTML 字串；沒有 `.html()`。清空用 `setText('')`。
-- `append` 的 child 以目標為 root（D20）。
-- handler 回傳 `false` 會被忽略（falsy），不等於 `preventDefault()` + `stopPropagation()`。
-- handler 收到 `(e, el)`；`this` 不是元素；`e.type` 是原生型別。jQuery 在委派 handler 裡把 `currentTarget` 設成被比對的元素、`delegateTarget` 設成 root；dom-plan 不改寫：`currentTarget` 是 root，被比對的元素是 `el`，而且 handler 回傳後 `currentTarget` 的值沒有保證（D18）。
-- 沒有直接綁定（不帶 selector 的 `.on`）：root 本身永遠不被比對（D11），點在 root 本身的 click 不會到任何 handler。
-- 不冒泡的事件（`load`、`error`、元素的 `scroll`、`toggle`、`invalid`、`play` 等）到不了 root，只有 D12 改綁的六個例外。jQuery 委派有同樣限制，但 jQuery 還有直接綁定。
-- handler 回傳的計畫在該事件所有 handler 都被呼叫**之後**才執行；後面的 handler 看不到前面 handler 要做的 DOM 改動。jQuery 是立即改，後面的 handler 看得到。
-- `append(child)` 有多個目標時，對每個目標各 `run` 一次 child；jQuery 是除了最後一個目標都複製。對 `create` 開頭的 child 結果相同，對 `append(Plan.all('.x'))` 不同。
-- 沒有 `trigger`：在 `tap` 裡 `dispatchEvent(new CustomEvent(...))`。
-- `stopImmediatePropagation` 不停止同層 handler（D17）。
-- 沒有逐一解除綁定的 `off`；只有整個 unmount。
-- `attr(n, v)` 只收字串；沒有 `prop`、`val`、`css`，用 `tap`。
-- 另一個 listener 已經在 root 上呼叫 `stopPropagation` 時，dom-plan 不執行任何 handler（比 jQuery 嚴格）。
-- binding selector 走 `Element.matches`：相對 selector（`> li`）在 `mount` 時丟 `SyntaxError`（D2）；`:scope` 指被比對的元素。
+- Nothing happens before `run`.
+- `Plan.all('.a')` selects at `run`. In jQuery, `const $a = $('.a')` is a set that is fixed when it is created.
+- `end()` exists. `.prevObject` and `.addBack()` do not. `add` takes a selector string only, not elements or a jQuery object.
+- jQuery has no `also(next)`: only a lazy library needs an explicit "then do this".
+- There are no getters (`.text()`, `.attr(n)`, `.val()`, `.hasClass()`). Use `run` and plain JavaScript, or read inside `tap`.
+- `addClass('a b')` throws (D24).
+- `filter` takes a function only: `filter(el => el.matches('.done'))`.
+- HTML strings are not accepted, and there is no `.html()`. To empty an element, use `setText('')`.
+- The child of `append` runs with the target as its root (D20).
+- A handler that returns `false` is ignored (`false` is falsy). It is not `preventDefault()` + `stopPropagation()`.
+- A handler gets `(e, el)`. `this` is not the element, and `e.type` is the native type. In a delegated handler, jQuery sets `currentTarget` to the matched element and `delegateTarget` to the root. dom-plan does not change the event: `currentTarget` is the root, the matched element is `el`, and after the handler returns, `currentTarget` is not defined (D18).
+- There is no direct binding (`.on` without a selector). The root itself is never matched (D11), so a click on the root itself reaches no handler.
+- Events that do not bubble (`load`, `error`, `scroll` on an element, `toggle`, `invalid`, `play`, and more) do not reach the root. The only exceptions are the six events of D12. jQuery delegation has the same limit, but jQuery also has direct binding.
+- The plan that a handler returns runs **after** all handlers of the event are called. A later handler does not see the DOM change of an earlier handler. jQuery changes the DOM at once, so a later handler sees it.
+- With several targets, `append(child)` runs the child once for each target. jQuery copies the node for all targets except the last. For a child that starts with `create`, the result is the same. For `append(Plan.all('.x'))`, it is different.
+- There is no `trigger`. Use `dispatchEvent(new CustomEvent(...))` inside `tap`.
+- `stopImmediatePropagation` does not stop the handlers at the same level (D17).
+- There is no `off` for one binding. There is only the unmount of all bindings.
+- `attr(n, v)` takes strings only. There is no `prop`, `val`, or `css`. Use `tap`.
+- If another listener on the root already called `stopPropagation`, dom-plan runs no handler. This is stricter than jQuery.
+- Binding selectors use `Element.matches`. A relative selector (`> li`) throws `SyntaxError` at `mount` (D2). `:scope` means the matched element.
 
-## 10. 未決問題
+## 10. Open questions
 
-1. **元素逃逸**：屬於 D13，不阻止；寫進使用文件。
-2. **錯誤處理**：無效的選取 selector 在 `run` 時才丟錯，同一個計畫剩下的步驟不執行；在 microtask 裡丟出時沒有指向建 chain 的 stack。binding selector 已在 `mount` 時驗證（D2）。handler 本身丟錯時，同一事件剩下的 handler 不會被呼叫（同一個 listener 迴圈；jQuery 相同）。
-3. **passive listener**：root 是 `document` 或 `body` 時，瀏覽器可能把 `touchstart`、`wheel` 等當 passive。哪些事件預設 passive 未確認。
-4. **`Element` 型別**：`run(document)[0].value` 需要轉型。先寫進文件，不加泛型。
-5. **`docOrder` 對不在同一棵樹的節點**：順序由實作決定，三棵以上的樹之間是否有遞移性未確認。
+1. **Elements that escape**: covered by D13. Not prevented. The user documentation must say so.
+2. **Errors**: an invalid selector in a plan throws at `run`, and the rest of the plan does not run. An error thrown in a microtask has no stack that points to the code that built the chain. Binding selectors are validated at `mount` (D2). If a handler throws, the remaining handlers of that event are not called (one listener loop; jQuery does the same).
+3. **Passive listeners**: if the root is `document` or `body`, a browser can treat `touchstart`, `wheel`, and similar events as passive. The list of these events was not confirmed.
+4. **The `Element` type**: `run(document)[0].value` needs a cast. The documentation must say so. No generic type parameter is planned.
+5. **`docOrder` for nodes in different trees**: the order depends on the implementation. Transitivity across three or more trees was not confirmed.
 
-## 10.5 之後再做（不在 spike 範圍）
+## 10.5 Later (not part of the spike)
 
-- **generator 寫法（`Plan.gen`）**：用 `yield*` 當 do notation，在 `run` 時依序執行，每一步拿到手的元素集合當一個值傳回 generator。
+- **Generator style (`Plan.gen`)**: `yield*` as do notation. At `run`, the steps execute in order, and the set of each step returns to the generator as one value.
   ```ts
   Plan.gen(function* () {
     const items = yield* Plan.all('li.todo') // Element[]
     yield* Plan.all('#count').setText(String(items.length))
   }).run(document)
   ```
-  - 步驟模型裡每一步的集合是一個值，generator 只需往前跑一次，不用 burrido 那種重播。
-  - 要讓 `yield*` 可用，`Plan` 需要 `[Symbol.iterator]`；這會讓 Plan 成為 iterable，要確認不會和 spread、`for...of` 的直覺衝突（v3 #2 的 thenable 問題是同一類風險）。
-  - 會重新引入「依結果決定下一步」（v2 拿掉的 continuation），要和 D5、D21 一起重新評估。
-  - 參考：`Effect.gen`（Effect v4 最小 bundle 約 57 KB gzip，2026-10-05 實測，太重不採用）、MobX `flow`、`pelotom/burrido`。
+  - In the step model, the set of each step is one value. So the generator runs forward once, without the replay that burrido needs.
+  - `yield*` needs `[Symbol.iterator]` on `Plan`. That makes a plan iterable, so spread and `for...of` must not mislead users. This risk is of the same kind as the thenable problem of v3 #2.
+  - It brings back "the next step depends on the result" (the continuation that v2 removed). It must be evaluated again together with D5 and D21.
+  - References: `Effect.gen` (the smallest bundle of Effect v4 measured about 57 KB with gzip on 2026-10-05, too large to use), MobX `flow`, `pelotom/burrido`.
 
 ## 11. Spike
 
-兩個 app（`examples/`），加上單元檢查（`test/`）。
+Two apps (`examples/`) and unit checks (`test/`).
 
-- **Todo app**：新增（submit 時 `preventDefault`、讀輸入值、`append` + `create`）、勾選與刪除（委派到後來新增的項目）、全部／未完成／已完成篩選、剩餘數量（刪除時用 `or` 讓計數在移除之後執行，見第 4 節；`tap` 需要 root 時在 handler 裡先存）、雙擊編輯（`focus` 用 `run` 之後的一般 JS）。
-- **天氣 app**：輸入城市 → geocoding → 預報 → 畫出列表；loading、錯誤、race 三種狀態（第 6 節的寫法）。API 預定用 Open-Meteo（免費、免 key，未查證現況與 `file://` 的 CORS）。
+- **Todo app**: add an item (`preventDefault` on submit, read the input value, `append` + `create`); toggle and remove items (delegation reaches items that were added later); filters for all, active, and done; the count of open items (on removal, `also` runs the count after the removal; see section 4); edit on double click (`focus` inside `tap`).
+- **Weather app**: city → geocoding → forecast → list. It has three states: loading, error, and race (section 6). The API is Open-Meteo. On 2026-10-05, both endpoints answered 200 with `access-control-allow-origin: *`, so `file://` pages can call them.
 
-單元檢查（jsdom，除非標明「瀏覽器」）：
+Unit checks run in jsdom, except the checks marked "browser".
 
-編譯：
+Compilation:
 
-- C1 `strict`、`target es2019`、`lib: ["es2019","dom","dom.iterable"]`：0 錯誤。若有錯，最可能在第 4 節起點步驟的參數型別推論。
-- C2 拿掉 `dom.iterable`：NodeList spread 處報錯。
-- C3 `lib` 降到 es2018：`flatMap` 處報錯。
-- C4 `target es5`、無 `downlevelIteration`：報 TS2802 的位置是 `uniqSorted` 的 `Set` spread、`mount` 裡對 `Set` 的 `for...of`、`all` 與 `find` 的 NodeList spread。對陣列的 `for...of` 不報錯。
+- C1 `strict`, `target es2019`, `lib: ["es2019","dom","dom.iterable"]`: 0 errors.
+- C2 without `dom.iterable`: the expected error at the NodeList spreads does not occur with TypeScript 7.0.2, because `dom` includes the iterable types.
+- C3 `lib` es2018: an error at `flatMap`.
+- C4 `target es5`: TypeScript 7.0.2 removed this target, so the check cannot run.
 
-步驟模型與選取（fixture：`<section id=root><div id=c2><div id=c1><span></span></div><span></span><p></p><input></div></section>`）：
+Step model and selection (fixture: `<section id=root><div id=c2><div id=c1><span></span></div><span></span><p></p><input></div></section>`):
 
-- R1 延後：建好計畫但未 `run`，DOM 不變；`run` 後才變。
-- R2 D8 同步驟：`Plan.all('.a').removeClass('a').addClass('b')`，原本有 `a` 的元素現在有 `b`。
-- R3 D8 跨步驟：`Plan.all('.a').removeClass('a').find('.err').setText('')`，原本 `.a` 底下的 `.err` 被清空。
-- R4 `Plan.all('div').addClass('a').find('span').addClass('b')`，div 只有 a、span 只有 b。
-- R5 `run` 回傳最後一步的元素；`Plan.all('p').remove().run(root)` 回傳被移除的 `p`。
-- R6 D9：`Plan.all('span, p').closest('div')` 回傳 `[c2, c1]`。
-- R7 D9 對照引擎：`Plan.all('span').add('div').run(root)` 等於同一個 root 上的 `[...root.querySelectorAll('div, span')]`。
-- R8 `end` 回到上一步的集合；空的守衛經過 `end` 仍是空的，兩個部分都不執行。
-- R9 `run` 同一個計畫兩次，效果重複。
-- R10 `Plan.from(el)` 對不在 root 下的元素不作用；`Plan.from(root).run(root)` 回傳 root。
-- R11 D7：空集合的 `tap` 不呼叫 callback；`first()` 對空集合回傳 `[]`。
-- R12 D20：`append(item(...))` 對兩個目標各建一份；`create` 計畫直接 `run` 回傳一個未接上的元素；child 以選取步驟結尾時接上的是該步的元素。
-- R13 無效 selector：建計畫不丟錯；`run` 丟 `SyntaxError`，後續步驟不執行。
-- R14 `await Promise.resolve(plan)` 會 settle（`Plan` 沒有 `then`）。
-- R15（v4 拿掉：`or` 已移除）
-- R16 D24：`addClass('a b')` 在 `run` 時丟 `InvalidCharacterError`。
+- R1 Deferral: a plan that is built but not run does not change the DOM. After `run`, it does.
+- R2 D8, one step: after `Plan.all('.a').removeClass('a').addClass('b')`, the elements that had `a` have `b`.
+- R3 D8, across steps: `Plan.all('.a').removeClass('a').find('.err').setText('')` empties the `.err` elements under the former `.a` elements.
+- R4 `Plan.all('div').addClass('a').find('span').addClass('b')`: the divs have `a` only, and the spans have `b` only.
+- R5 `run` returns the elements of the last step. `Plan.all('p').remove().run(root)` returns the removed `p`.
+- R6 D9: `Plan.all('span, p').closest('div')` returns `[c2, c1]`.
+- R7 D9 against the engine: `Plan.all('span').add('div').run(root)` equals `[...root.querySelectorAll('div, span')]` on the same root.
+- R8 `end` goes back to the previous set. An empty guard stays empty after `end`, so neither part runs.
+- R9 Two calls to `run` on one plan repeat the effects.
+- R10 `Plan.from(el)` has no effect on an element outside the root. `Plan.from(root).run(root)` returns the root.
+- R11 D7: `tap` does not call its callback on an empty set. `first()` on an empty set returns `[]`.
+- R12 D20: `append(item(...))` builds one copy for each of two targets. A `create` plan that runs alone returns an element that is not attached. If the child ends with a select step, `append` attaches the set of that step.
+- R13 Invalid selector: no error when the plan is built. `run` throws `SyntaxError`, and the later steps do not run.
+- R14 `await Promise.resolve(plan)` settles (`Plan` has no `then`).
+- R15 Removed in v4 (it tested `or`).
+- R16 D24: `addClass('a b')` throws `InvalidCharacterError` at `run`.
 
-委派（合成事件一律 `bubbles: true`）：
+Delegation (all synthetic events use `bubbles: true`):
 
-- R17 mount 後新增的元素被點擊時 handler 被呼叫；`click()` 回傳當下 DOM 未變，`await null` 後已變。
-- R18 D10：巢狀 `.outer`/`.inner`，綁定順序 `[outer, inner]`，點 `.inner` 的順序是 `[inner, outer]`；同一元素同時符合兩者時依綁定順序；inner 呼叫 `stopPropagation` 時 outer 不執行。
-- R19 D12 跨型別：`focus` 綁 `.field`、`focusin` 綁 `input`，focus 到 input 時順序是 `[input, field]`；`blur`/`focusout` 同理（瀏覽器）。
-- R20 D11：`mount(document, ...)` 時 `html` 會被比對，`document` 不會；selector 只符合 root 本身時不呼叫。
-- R21 D17：同層兩個 handler，第一個呼叫 `stopImmediatePropagation`，第二個仍執行，外層不執行。
-- R22 D18：綁 `focus` 收到 `e.type === 'focusin'`（瀏覽器）；handler 裡 `e.currentTarget === root`；**合成派發**（`dispatchEvent`）時，在 `tap` 裡讀 `e.currentTarget` 得到 `null`。
-- R23 click 過濾：binding 放在 disabled button 的**祖先**上，對 button `dispatchEvent(new MouseEvent('click', { bubbles: true }))`，祖先的 handler 仍被呼叫，button 本身的 binding 不被呼叫；`button: 2` 的 click 一律不觸發。
-- R24 enter/leave：合成 `mouseover` 在 `.box` 內子元素之間移動不觸發 `mouseenter` binding；從外面進來觸發；`relatedTarget: null` 觸發。
-- R25 checkbox 的 click handler 呼叫 `preventDefault`，`click()` 回傳後 `checked === false`（jsdom 不支援時改瀏覽器）。
-- R26 D22：兩層 handler 回傳有共同前段的計畫，前段跑兩次；同一個計畫物件被兩個 handler 回傳也跑兩次；一個計畫丟錯，另一個照常執行（檢查必須先裝 `process.once('uncaughtException', ...)` 或測試框架的 unhandled-error hook 接住錯誤，再斷言第二個計畫有執行）。
-- R27 handler 回傳 `undefined` 不排任何東西；unmount 後不再觸發；`mount` 時給無效 selector 立即丟錯。
-- R28 瀏覽器：真實點擊時兩個 `mount` 在同一個 root 上，第一個的 microtask 在第二個 listener 前執行；真實點擊時 `tap` 裡的 `e.currentTarget` 仍是 root；passive 的 `touchstart`；focus 事件需視窗有焦點。
-- R29 `a.also(b)`：`a` 的效果先於 `b`；`run` 回傳 `b` 的元素。
-- R30 `Plan.from(el)` 在 `el.remove()` 之後回傳 `[]`。
-- R31 F12（瀏覽器）：`focus` binding 存在時，`tap(el => el.focus())` 在 `run` 中同步呼叫 handler，handler 的計畫在之後的 microtask 執行，不丟錯。
-- R32 合成派發下兩個 `mount` 在同一個 root：兩個 listener 的 handler 都先被呼叫，之後才依序執行所有 microtask（對照 R28）。
+- R17 A handler is called for an element that was added after `mount`. When `click()` returns, the DOM is not changed yet. After `await null`, it is changed.
+- R18 D10: with nested `.outer` and `.inner` and the binding order `[outer, inner]`, a click on `.inner` runs `[inner, outer]`. If one element matches both, the binding order applies. If inner calls `stopPropagation`, outer does not run.
+- R19 D12 across types (browser): with `focus` on `.field` and `focusin` on `input`, focus on the input runs `[input, field]`. `blur` and `focusout` behave the same.
+- R20 D11: with `mount(document, ...)`, `html` can match and `document` cannot. A selector that matches only the root is never called.
+- R21 D17: with two handlers at one level, the first calls `stopImmediatePropagation`. The second still runs, and the outer level does not.
+- R22 D18: a `focus` binding gets `e.type === 'focusin'` (browser). In the handler, `e.currentTarget === root`. After **synthetic dispatch** (`dispatchEvent`), `e.currentTarget` read in `tap` is `null`.
+- R23 Click filter: with a binding on an **ancestor** of a disabled button, `dispatchEvent(new MouseEvent('click', { bubbles: true }))` on the button calls the ancestor handler but not the binding on the button. A click with `button: 2` triggers nothing.
+- R24 Enter and leave: a synthetic `mouseover` from one child of `.box` to another child does not trigger the `mouseenter` binding. A move from outside triggers it. `relatedTarget: null` triggers it.
+- R25 A click handler on a checkbox calls `preventDefault`. After `click()` returns, `checked === false`.
+- R26 D22: two handlers at two levels return plans with a shared prefix. The prefix runs twice. One plan object returned by two handlers also runs twice. If one plan throws, the other still runs. The check must catch the error first with `process.on('uncaughtException', ...)` or the unhandled-error hook of the test runner.
+- R27 A handler that returns `undefined` schedules nothing. After unmount, no handler is called. An invalid selector throws at `mount`.
+- R28 Browser: with two `mount` calls on one root, the microtask of the first runs before the second listener on a real click. On a real click, `e.currentTarget` in `tap` is still the root. Also: a passive `touchstart`; focus events need a focused window.
+- R29 `a.also(b)`: the effects of `a` run before the effects of `b`. `run` returns the elements of `b`.
+- R30 `Plan.from(el)` returns `[]` after `el.remove()`.
+- R31 F12 (browser): with a `focus` binding, `tap(el => el.focus())` calls the handler synchronously inside `run`. The plan of the handler runs in a later microtask, without an error.
+- R32 Synthetic dispatch with two `mount` calls on one root: the handlers of both listeners are called first. Then all microtasks run in order (compare R28).
 
-jsdom 相依：R18、R21 需要 `cancelBubble` 反映 `stopPropagation`；R27 需要 `addEventListener` 的 `signal` 選項；R25 需要 checkbox 的取消啟動行為。檢查失敗時先確認 jsdom 是否支援，再判斷是不是庫的問題。
+Dependencies on jsdom: R18 and R21 need `cancelBubble` to show `stopPropagation`. R27 needs the `signal` option of `addEventListener`. R25 needs the canceled activation of a checkbox. If one of these checks fails, first make sure that jsdom supports the feature. Then decide if the library has a fault.
 
-## 12. Review 處理狀態
+## 12. Review findings and how they were handled
 
 ### v1
 
-| #   | 內容                              | 狀態                                                                       |
-| --- | --------------------------------- | -------------------------------------------------------------------------- |
-| F1  | `or` 共同前段跑兩次               | D14（範圍見 v3 #3）                                                        |
-| F2  | 自我排程卡死                      | 消失：效果不回傳計畫。仍可在 `tap` 裡明寫 `run`，屬使用者自己的程式（D21） |
-| F3  | `from` 不檢查 root                | 採用                                                                       |
-| F4  | `mount` 不接受 `document`         | 採用                                                                       |
-| F5  | 錯誤處理                          | 第 10 節                                                                   |
-| F6  | handler 回傳 nothing              | 採用                                                                       |
-| F7  | 多 binding 順序                   | 照 jQuery（D10）                                                           |
-| F8  | `freeze` 只凍外層                 | 拿掉                                                                       |
-| F9  | `mount` 保留參照                  | 採用（D2）                                                                 |
-| F12 | `focus` 在 run 中同步觸發 handler | 不會重入：handler 只排 microtask                                           |
-| F13 | passive                           | 第 10 節                                                                   |
-| F14 | 跨 realm                          | `nodeType === 1`                                                           |
+| #   | Finding                                            | Handling                                                                                             |
+| --- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| F1  | The common prefix of `or` runs twice               | D14 (scope in v3 #3); removed with `or` in v4                                                        |
+| F2  | A plan that schedules itself freezes the page      | Gone: effects do not return plans. A user can still call `run` inside `tap`; that is user code (D21) |
+| F3  | `from` does not check the root                     | Applied                                                                                              |
+| F4  | `mount` does not accept `document`                 | Applied                                                                                              |
+| F5  | Errors                                             | Section 10                                                                                           |
+| F6  | A handler cannot return nothing                    | Applied                                                                                              |
+| F7  | Order of several bindings                          | Like jQuery (D10)                                                                                    |
+| F8  | `freeze` freezes only the outer object             | Removed                                                                                              |
+| F9  | `mount` keeps a reference to the caller's array    | Applied (D2)                                                                                         |
+| F12 | `focus` inside `run` calls a handler synchronously | No re-entry: a handler only schedules a microtask                                                    |
+| F13 | Passive listeners                                  | Section 10                                                                                           |
+| F14 | Objects from another realm                         | `nodeType === 1`                                                                                     |
 
 ### v2.1
 
-| #   | 內容                     | 狀態                                               |
-| --- | ------------------------ | -------------------------------------------------- |
-| M1  | 選取結果在 chain 中失效  | 步驟模型（D8）                                     |
-| M2  | 依宣告型別各裝 listener  | 依原生型別分組                                     |
-| M3  | R14 無效                 | 改測祖先（R23）                                    |
-| S1  | `closest` 越出 root      | 第 4 節                                            |
-| S2  | D2 淺複製                | 複製 tuple                                         |
-| S3  | `currentTarget`          | D18（含 v3 #4）                                    |
-| S4  | 先前已 `stopPropagation` | `!e.cancelBubble` 在迴圈條件；第 9 節              |
-| P1  | `uniqSorted` 成本        | 不改，等量測                                       |
-| P2  | unmount                  | 採用                                               |
-| P3  | 合併同次派發             | 不合併（D22，user）                                |
-| P4  | `first()`                | 採用                                               |
-| P5  | `Element` 型別           | 第 10 節                                           |
-| P6  | `toggleClass(c, force)`  | 採用                                               |
-| P7  | handler 的 `root` 參數   | 拿掉；改用 `closest` 或先存 `currentTarget`（D18） |
-| P8  | passive opt-out          | 第 10 節                                           |
-| P9  | `nodeType === 1`         | 採用                                               |
-| P10 | `matches` 的限制         | 第 9 節                                            |
-| P11 | window 事件              | 非目標                                             |
+| #   | Finding                                    | Handling                                               |
+| --- | ------------------------------------------ | ------------------------------------------------------ |
+| M1  | A selection becomes invalid inside a chain | Step model (D8)                                        |
+| M2  | One listener for each declared type        | Grouped by native type                                 |
+| M3  | R14 tests nothing                          | Tests the ancestor instead (R23)                       |
+| S1  | `closest` leaves the root                  | Section 4                                              |
+| S2  | D2 copies only one level                   | Copies each tuple                                      |
+| S3  | `currentTarget`                            | D18 (with v3 #4)                                       |
+| S4  | `stopPropagation` was already called       | `!e.cancelBubble` in the loop condition; section 9     |
+| P1  | Cost of `uniqSorted`                       | Not changed until measured                             |
+| P2  | Unmount                                    | Applied                                                |
+| P3  | Merge the plans of one dispatch            | No merging (D22, author)                               |
+| P4  | `first()`                                  | Applied                                                |
+| P5  | The `Element` type                         | Section 10                                             |
+| P6  | `toggleClass(c, force)`                    | Applied                                                |
+| P7  | The `root` parameter of a handler          | Removed; use `closest`, or store `currentTarget` (D18) |
+| P8  | Opt out of passive listeners               | Section 10                                             |
+| P9  | `nodeType === 1`                           | Applied                                                |
+| P10 | Limits of `matches`                        | Section 9                                              |
+| P11 | Window events                              | Non-goal                                               |
 
 ### v3
 
-| #   | 內容                                     | 狀態                                |
-| --- | ---------------------------------------- | ----------------------------------- |
-| 1   | D22 合併時共同前段找不到                 | 不合併（D22，user），合併程式碼刪除 |
-| 2   | `private then` 讓 Plan 成為 thenable     | 改名 `step`；R14                    |
-| 3   | D14 不可結合                             | 收窄 D14 的範圍；R8                 |
-| 4   | `currentTarget` 在 microtask 裡是 `null` | 寫進 D18；R22                       |
-| 5   | 派發事件的元素不能是 root                | 第 6 節                             |
-| 6   | `addClass('a b')` 丟錯                   | 照原生行為（D24，user）；R16        |
-| 7   | C4 預期錯誤位置                          | 已修正                              |
-| 8   | `mount` 時驗證 selector                  | 採用（D2）；R27                     |
-| 9   | `as unknown as Binding`                  | 拿掉                                |
-| 10  | `rel === el` 多餘                        | 拿掉                                |
-| 11  | `e.or(e)` 多一個空的 `or` 步驟           | 不改                                |
+| #   | Finding                                                 | Handling                                     |
+| --- | ------------------------------------------------------- | -------------------------------------------- |
+| 1   | With merging (D22), the common prefix is not found      | No merging (D22, author); merge code removed |
+| 2   | `private then` makes a plan a thenable                  | Renamed to `step`; R14                       |
+| 3   | D14 is not associative                                  | Scope of D14 narrowed; removed in v4         |
+| 4   | `currentTarget` is `null` in the microtask              | D18; R22                                     |
+| 5   | The element that dispatches an event cannot be the root | Section 6                                    |
+| 6   | `addClass('a b')` throws                                | Native behavior (D24, author); R16           |
+| 7   | Expected error sites of C4                              | Corrected                                    |
+| 8   | Validate selectors at `mount`                           | Applied (D2); R27                            |
+| 9   | `as unknown as Binding`                                 | Removed                                      |
+| 10  | `rel === el` is redundant                               | Removed                                      |
+| 11  | `e.or(e)` adds an empty `or` step                       | Not changed; removed with `or` in v4         |
 
 ### v3.1
 
-| #   | 內容                                                         | 狀態                                       |
-| --- | ------------------------------------------------------------ | ------------------------------------------ |
-| 1   | 第 6 節請求先於計畫，已 settle 的 promise 讓 UI 停在 loading | 請求移到 `tap` 裡（第 6 節）               |
-| 2   | `currentTarget` 在真實事件的 microtask 裡仍是 root           | 修正 D18、第 9 節、R22、R28                |
-| 3   | `or` 不排序不同樹的元素                                      | 第 4 節：用串接的 `append`；R15 不檢查順序 |
-| 4   | 刪除後 `closest` 找不到 root                                 | 第 4 節：用 `or` 排序效果；R29、R30        |
-| 5   | `Date.now()` 會重複                                          | 改用計數器                                 |
-| 6   | R26 要接住 microtask 裡的錯誤                                | 修正 R26                                   |
-| 7   | 第 9 節缺的差異                                              | 補上六條                                   |
-| 8   | jsdom 相依                                                   | 列在第 11 節                               |
-| 9   | handler 丟錯中止同事件其餘 handler                           | 第 10 節                                   |
-| 10  | D14 措辭                                                     | 改為一般規則                               |
-| 11  | `steps` 是 public                                            | 改 `private readonly`                      |
-| 12  | `then` 沒有 `.catch`                                         | 第 6 節改用 `.then().catch()`              |
-| 13  | focus 可以直接在 `tap` 裡做                                  | spike 採用                                 |
-| 14  | 缺的單元檢查                                                 | R29-R32                                    |
+| #   | Finding                                                                                        | Handling                                                 |
+| --- | ---------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| 1   | In section 6, the request starts before the plan, and a settled promise keeps the page loading | The request starts in `tap` (section 6)                  |
+| 2   | In the microtask of a real event, `currentTarget` is still the root                            | D18, section 9, R22, and R28 corrected                   |
+| 3   | `or` does not sort elements from different trees                                               | Section 4: chain `append`; removed with `or` in v4       |
+| 4   | After a removal, `closest` cannot find the root                                                | Section 4: sequence the effects (`also` in v4); R29, R30 |
+| 5   | `Date.now()` can repeat                                                                        | A counter instead                                        |
+| 6   | R26 must catch the error in the microtask                                                      | R26 corrected                                            |
+| 7   | Missing differences in section 9                                                               | Six items added                                          |
+| 8   | Dependencies on jsdom                                                                          | Listed in section 11                                     |
+| 9   | A handler that throws stops the other handlers of the event                                    | Section 10                                               |
+| 10  | Wording of D14                                                                                 | General rule; removed in v4                              |
+| 11  | `steps` is public                                                                              | `private readonly`                                       |
+| 12  | `then` has no `.catch`                                                                         | Section 6 uses `.then().catch()`                         |
+| 13  | `focus` can be done in `tap`                                                                   | Used in the spike                                        |
+| 14  | Missing unit checks                                                                            | R29-R32                                                  |
 
-### v4（spike 之後）
+### v4 (after the spike)
 
-| 來源  | 內容                                                                                   | 處理                                              |
-| ----- | -------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| spike | 天氣 app 的守衛被從 root 起算的 `or` 分支繞過，過期回應被畫出                          | `end()` 分支（D25）；R8；e2e race 檢查            |
-| spike | 11 處 `or` 全是依序執行，沒有聯集                                                      | 拆成 `add`、`end`、`also`（D25）                  |
-| spike | `also` 的「next 必須從起點開始」檢查永遠不會觸發                                       | 拿掉：由 private 建構子保證                       |
-| spike | `assert.deepEqual` 比對 DOM 元素時比結構，不比身分                                     | 測試改用逐一身分比對；故意改壞 4 處確認檢查會失敗 |
-| spike | TypeScript 7.0.2：`dom` 已含 iterable（C2 不報錯）；`target es5` 已移除（C4 無法執行） | C2、C4 的預期作廢                                 |
-| user  | 效果順序的組合需要 lazy stream                                                         | 不做（D26）                                       |
+| Source | Finding                                                                                                            | Handling                                                                                          |
+| ------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| spike  | In the weather app, an `or` branch that started from the root bypassed the guard, and a stale response was shown   | Branch with `end()` (D25); R8; race check in the browser checks                                   |
+| spike  | All 11 uses of `or` were sequencing, none was a union                                                              | Split into `add`, `end`, and `also` (D25)                                                         |
+| spike  | The check "next must begin with a starting point" in `also` can never trigger                                      | Removed: the private constructor guarantees it                                                    |
+| spike  | `assert.deepEqual` compares DOM elements by structure, not by identity                                             | The tests compare identity at each index. Four deliberate faults in the code made the checks fail |
+| spike  | TypeScript 7.0.2: `dom` includes the iterable types (C2 reports no error); `target es5` is removed (C4 cannot run) | The expectations of C2 and C4 are withdrawn                                                       |
+| author | A composition of effect order needs a lazy stream                                                                  | Not done (D26)                                                                                    |

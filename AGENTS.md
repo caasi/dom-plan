@@ -13,7 +13,7 @@ The core idea has four parts:
 - **Lazy.** Nothing happens before `run`. The user decides when to leave the lazy part.
 - **Light.** One class and one array of steps. DOM behavior is the native behavior.
 
-The design record is `docs/000-design.md` (Traditional Chinese). The code in `src/index.ts` is the source of truth.
+The design record is `docs/000-design.md`. The code in `src/index.ts` is the source of truth.
 
 ## Rules for code that uses dom-plan
 
