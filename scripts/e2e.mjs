@@ -27,7 +27,12 @@ const page = await browser.newPage()
 const errors = []
 page.on('pageerror', e => errors.push(String(e)))
 const url = name => pathToFileURL(resolve(`examples/${name}/index.html`)).href
-const ok = (cond, msg) => console.log(`${cond ? 'PASS' : 'FAIL'} ${msg}`)
+// A FAIL must make the script exit non-zero, so that CI and other callers can see it.
+let failed = 0
+const ok = (cond, msg) => {
+  if (!cond) failed++
+  console.log(`${cond ? 'PASS' : 'FAIL'} ${msg}`)
+}
 
 // --- todo ---
 await page.goto(url('todo'))
@@ -157,3 +162,7 @@ if (process.argv.includes('--weather')) {
 
 ok(errors.length === 0, `no page errors ${errors.join(' | ')}`)
 await browser.close()
+if (failed) {
+  console.log(`${failed} check(s) failed`)
+  process.exitCode = 1
+}
