@@ -9,7 +9,7 @@ Work that is planned but not done. Known limits and open questions are in `known
 - [x] Create the GitHub repository and add a remote.
 - [x] Decide if `dist/` is published as `tsc` output or minified: plain `tsc` output, because the bundler of the user minifies it.
 - [x] Add `package.json` fields for publication (`repository`, `keywords`, `publishConfig`), and remove `"private": true`.
-- [ ] Publish 0.1.0 to npm.
+- [x] Publish 0.1.0 to npm.
 
 ## Later
 

@@ -21,8 +21,6 @@ The core is about 1 KB, minified and gzipped.
 npm install @caasi/dom-plan
 ```
 
-Status: the package is not on npm yet.
-
 ## The core idea
 
 dom-plan is a lazy, lightweight DOM operation language with a monadic interface, inspired by jQuery.
