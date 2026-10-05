@@ -77,20 +77,27 @@ If the request starts in the handler and the promise is already settled, the res
 
 ### Events
 
-`plan.on(bindings)` binds events on each element that the plan holds, at `run`, with the rules of jQuery. `plan.off(bindings)` removes the equal bindings (same event, selector, and handler), and `plan.off()` removes all of them.
+`plan.on(event, selector, handler)` delegates an event from each element that the plan holds, at `run`, with the rules of jQuery. `plan.on(event, handler)` binds to the element itself. Each call adds one binding; chain calls to add more. `plan.off` works like jQuery's `.off`: `off()` removes all bindings, `off(event)` removes those of the event, and `off(event, selector)`, `off(event, handler)`, or `off(event, selector, handler)` narrow it. An omitted trailing argument matches any.
+
+Differences from jQuery's `.on` and `.off`. These forms are not supported. Event names are compared as literal strings, so most of them match no browser event and nothing reports it:
+
+- No event namespaces: `on('click.menu', ...)` listens to an event named `click.menu`, which no browser event matches.
+- No space-separated lists: `on('click keydown', ...)` listens to the literal name `click keydown`. Call `on` once for each event.
+- No event map (`on({ click: f })`) and no `data` argument. Use a closure.
+- `off('click', '**')` does not mean "all delegated bindings". `'**'` is compared as a plain selector.
+- An omitted trailing argument of `off` matches any, and a trailing `undefined` is the same as omitting it. `undefined` before a given argument, and `null` anywhere, are not part of the contract.
+- The TypeScript types are the contract. `null` is not a selector: write `on(event, handler)` for a direct binding. An untyped call with a wrong argument shape (for example a `data` object before the handler) can fail later, when the event fires.
 
 ```ts
 Plan.all('.todoapp')
-  .on([
-    ['click', '.delete', (_e, btn) => Plan.from(btn).closest('li').remove()], // delegated
-    ['click', null, (_e, el) => Plan.from(el).addClass('touched')], // direct, on .todoapp itself
-  ])
+  .on('click', '.delete', (_e, btn) => Plan.from(btn).closest('li').remove()) // delegated
+  .on('click', (_e, el) => Plan.from(el).addClass('touched')) // direct, on .todoapp itself
   .run(document)
 ```
 
 - A plan with `on` that runs twice binds twice. Run it once, or call `off` first.
 - To call `off` later, keep the bound element (`Plan.from(el).off(...)`). A selector that runs again can miss an element that was removed or changed.
-- A delegated binding never matches the element that it is bound on. To handle events on that element, use a direct binding: the selector `null`.
+- A delegated binding never matches the element that it is bound on. To handle events on that element, use a direct binding: `on(event, handler)` without a selector.
 - Handlers for inner elements run first. `stopPropagation()` stops the outer levels.
 - `stopImmediatePropagation()` does not stop other handlers at the same level.
 - In a delegated binding, `focus`, `blur`, `mouseenter`, `mouseleave`, `pointerenter`, and `pointerleave` use the events that bubble. The handler gets the native event, so `e.type` is, for example, `focusin`. A direct binding uses its own event type.

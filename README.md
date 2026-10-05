@@ -85,28 +85,30 @@ Plan.all('#forecast').find('.days').setText('').end().find('.place').setText('Ta
 
 ### Events
 
-`plan.on(bindings)` binds events on each element that the plan holds, with the rules of jQuery. Like every effect, it binds at `run`. A handler can return a plan, and that plan runs in a microtask with the bound element as root. A binding with the selector `null` binds to the element itself.
+`plan.on(event, selector, handler)` delegates an event from each element that the plan holds, with the rules of jQuery. `plan.on(event, handler)` binds to the element itself. Like every effect, it binds at `run`. A handler can return a plan, and that plan runs in a microtask with the bound element as root. `plan.off` works like jQuery's `.off`. These jQuery forms are not supported:
+
+- Event namespaces (`click.menu`) and space-separated lists (`'click keydown'`): event names are compared as literal strings, so these match no browser event.
+- `off(event, '**')`: `'**'` is compared as a plain selector, so it removes nothing.
+- The event map (`on({ click: f })`) and the `data` argument: the TypeScript types reject them. An untyped call with a wrong argument shape can fail later, when the event fires.
+
+The TypeScript types are the contract: `null` is not a selector.
 
 ```ts
-import { Plan, type Binding } from '@caasi/dom-plan'
+const toggle = (_e: Event, box: Element) =>
+  Plan.from(box)
+    .closest('li')
+    .toggleClass('done', (box as HTMLInputElement).checked)
 
-const bindings: Binding[] = [
-  ['click', '.delete', (_e, btn) => Plan.from(btn).closest('li').remove()],
-  [
-    'change',
-    '.toggle',
-    (_e, box) =>
-      Plan.from(box)
-        .closest('li')
-        .toggleClass('done', (box as HTMLInputElement).checked),
-  ],
-  ['click', null, (_e, el) => Plan.from(el).addClass('touched')],
-]
+Plan.all('.todoapp')
+  .on('click', '.delete', (_e, btn) => Plan.from(btn).closest('li').remove())
+  .on('change', '.toggle', toggle)
+  .on('click', (_e, el) => Plan.from(el).addClass('touched'))
+  .run(document)
 
-Plan.all('.todoapp').on(bindings).run(document)
-
-// later: remove these bindings, or all with off()
-Plan.all('.todoapp').off(bindings).run(document)
+// later
+Plan.all('.todoapp').off('change', '.toggle', toggle).run(document) // one binding
+Plan.all('.todoapp').off('click').run(document) // all click bindings
+Plan.all('.todoapp').off().run(document) // everything
 ```
 
 A plan with `on` that runs twice binds twice. Run it once, or call `off` first. To call `off` later, keep the bound element, so that a removed or changed element is not missed. There is no binding on `document` or `window`: use `Plan.from(document.documentElement)`, or the native API inside `tap`.

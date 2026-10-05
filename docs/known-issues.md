@@ -9,11 +9,13 @@ These limits are intentional. They follow from the core idea.
 - **A plan that is never run does nothing.** TypeScript does not report it, and nothing happens at run time.
 - **Effects inside closures are not prevented (D13).** A handler, a `tap` callback, or a `flatMap` function can write the DOM, send a request, or store an element outside the plan. The types cannot block this.
 - **`Plan.from(el)` does not skip a removed element (D27).** A plan that starts from a captured element still acts on it after `el.remove()`. Add `filter(el => el.isConnected)` to skip it.
+- **The TypeScript types are the contract of `on` and `off` (D31).** An untyped caller that passes `null` as a selector, or omits the handler, gets a binding that fails when the event fires.
+- **jQuery event syntax is not supported.** Namespaces (`click.ns`) and space-separated lists (`'click keydown'`) are compared as literal event names, so they match no browser event and nothing reports it. The selector `'**'` in `off(event, '**')` is compared as a plain selector, so it removes nothing.
 - **Elements can escape.** The array that `run` returns, and elements that a `tap` callback stores, are plain DOM elements. Changes to them are outside the plan.
 - **No effect-order composition (D26).** `also` concatenates steps in the written order. There is no scheduling, no interleaving, and no asynchronous ordering.
 - **`addClass('a b')` throws `InvalidCharacterError` (D24).** This is the native behavior of `DOMTokenList`.
 - **`stopImmediatePropagation` does not stop other handlers at the same level (D17).**
-- **A delegated binding never matches the element that it is bound on (D11).** Use a direct binding (selector `null`) for that element.
+- **A delegated binding never matches the element that it is bound on (D11).** Use a direct binding (`on(event, handler)`, without a selector) for that element.
 - **A plan with `on` that runs twice binds twice (D28).** A plan is a query, so its effects repeat. Run it once, or call `off` first.
 - **No binding on `document` or `window` (D29).** Use `Plan.from(document.documentElement)`, or the native API inside `tap`.
 - **The library keeps one piece of state:** a `WeakMap` from each bound element to its bindings, so that `off` can remove them (D28).
