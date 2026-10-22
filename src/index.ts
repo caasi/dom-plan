@@ -37,9 +37,11 @@ function exec(steps: readonly Step[], root: ParentNode): Element[] {
  *   Select steps (`flatMap`, `find`, `filter`, `closest`, `first`, `add`) start from the set that
  *   the previous step held, like jQuery's chain, and read the live DOM. Effects act on the current
  *   set, so a later select step sees their changes.
- * - `end()` goes back to the previous set (jQuery `.end`). `also(next)` runs another plan after
+ * - `end()` goes back to the set held before the last select step (jQuery `.end`). `also(next)` runs another plan after
  *   this one.
  * - A Plan is a query, not a result: calling `run` twice selects again and repeats the effects.
+ * - The arguments of a method are fixed when the plan is built. Only the select steps and the
+ *   effects happen at `run`. To use a value from run time, read it inside `tap`.
  *
  * @example
  * Plan.all('.a').removeClass('a').addClass('b').run(document)
@@ -67,21 +69,26 @@ export class Plan {
   /** Selects nothing. Effects after it never run. */
   static none = new Plan([{ k: 'q', f: () => [] }])
 
+  /** Selects, for each held element, the elements that `f` returns: the bind of the selection monad. */
   flatMap(f: (el: Element) => Element[]) {
     return this.step({ k: 'q', f: els => els.flatMap(f) })
   }
+  /** Selects the descendants of each held element that match `css` (`querySelectorAll`). */
   find(css: string) {
     return this.flatMap(el => [...el.querySelectorAll(css)])
   }
+  /** Keeps the held elements for which `p` is true. It takes a function, not a selector. */
   filter(p: (el: Element) => boolean) {
     return this.flatMap(el => (p(el) ? [el] : []))
   }
+  /** Selects, for each held element, the nearest ancestor (or the element itself) that matches `css`. */
   closest(css: string) {
     return this.flatMap(el => {
       const c = el.closest(css)
       return c ? [c] : []
     })
   }
+  /** Keeps only the first held element, in document order. */
   first() {
     return this.step({ k: 'q', f: els => els.slice(0, 1) })
   }
@@ -110,26 +117,33 @@ export class Plan {
   tap(fx: (el: Element) => void) {
     return this.step({ k: 'fx', fx })
   }
+  /** Adds one class (`classList.add`). A string with a space throws at `run`. */
   addClass(c: string) {
     return this.tap(el => el.classList.add(c))
   }
+  /** Removes one class (`classList.remove`). */
   removeClass(c: string) {
     return this.tap(el => el.classList.remove(c))
   }
+  /** Adds or removes one class. With `force`, adds it when true and removes it when false. */
   toggleClass(c: string, force?: boolean) {
     return this.tap(el => el.classList.toggle(c, force))
   }
+  /** Sets an attribute (`setAttribute`), not a property. For `value` or `checked`, set the property inside `tap`. */
   attr(n: string, v: string) {
     return this.tap(el => el.setAttribute(n, v))
   }
+  /** Removes an attribute (`removeAttribute`). */
   removeAttr(n: string) {
     return this.tap(el => el.removeAttribute(n))
   }
+  /** Sets `textContent`. The text is fixed when the plan is built; for a value from run time, use `tap`. */
   setText(t: string) {
     return this.tap(el => {
       el.textContent = t
     })
   }
+  /** Removes each held element from the DOM. The set still holds them; `end()` goes back to the set held before the last select step. */
   remove() {
     return this.tap(el => el.remove())
   }
@@ -177,7 +191,11 @@ export class Plan {
     return this.tap(el => el.append(...child.run(el)))
   }
 
-  /** The only exit: runs every step against `root` and returns the elements of the last step. */
+  /**
+   * The only exit: runs every step against `root` and returns the elements of the last step.
+   * It inserts nothing into `root`: an element from `Plan.create` reaches the DOM only through `append`,
+   * or through your own code inside `tap`.
+   */
   run(root: ParentNode): Element[] {
     return exec(this.steps, root)
   }

@@ -11,9 +11,9 @@ The core idea has four parts:
 - **jQuery-inspired.** Chains, the step model of `pushStack`, and the delegation rules come from jQuery.
 - **Monadic.** Selection is a monad over a list of elements, with `Plan.from` as `return` and `flatMap` as bind (`flatMap` takes a function that returns an array of elements, not a plan). A plan is a sequence of steps. The only value it carries is the held set. Each select step reads the live DOM, so it sees the changes of earlier effects. `run` is the only exit.
 - **Lazy.** To build a plan does not touch the DOM. The user decides when to leave the lazy part.
-- **Light.** One class and one array of steps. DOM behavior is the native behavior. The library does not try to wrap everything: it does not change native behavior to make it easier, and it does not wrap promises.
+- **Lightweight.** One class and one array of steps. DOM behavior is the native behavior. The library does not try to wrap everything: it does not change native behavior to make it easier, and it does not wrap promises.
 
-The design record is `docs/000-design.md`. Known limits are in `docs/known-issues.md`, and planned work is in `docs/todos.md`. The code in `src/index.ts` is the source of truth.
+The design record is `docs/000-design.md`. Known limits are in `docs/known-issues.md`, and planned work is in `docs/todos.md`. The code in `src/index.ts` is the source of truth. These files are in the repository only. The installed package has `README.md`, this file, `LICENSE`, `package.json`, `dist/index.js` and `dist/index.d.ts`.
 
 ## Rules for code that uses dom-plan
 
@@ -22,11 +22,22 @@ The design record is `docs/000-design.md`. Known limits are in `docs/known-issue
 1. End each plan that must change the DOM with `.run(root)`.
 2. If a handler returns a plan, do not call `run` on it. The plan runs in a microtask, with the element that `on` bound as `root`.
 
-In a plan that a handler returns, `Plan.all` and `add` select only under the bound element. `Plan.all('#elsewhere')` outside it selects nothing, and nothing reports it.
+In a plan that a handler returns, `Plan.all` and `add` select only under the bound element. `Plan.all('#elsewhere')` outside it selects nothing, and nothing reports it. `Plan.all` never selects the bound element itself. To change it, start the plan with `Plan.from(e.currentTarget as Element)` inside the handler. In JavaScript, leave out the cast.
 
 3. Do not write `$(...)`. Start a plan with `Plan.all`, `Plan.from`, `Plan.create`, or `Plan.none`.
 
 A plan that is built and never run does nothing. TypeScript does not report this mistake.
+
+### Build time and run time
+
+1. The arguments of a method are fixed when you build the plan: `setText(String(n))` keeps the `n` of that moment. Only the select steps and the effects happen at `run`. To use a value from run time, read it inside `tap`.
+2. Every method except `run` returns a new plan and leaves the old one as it is. In a loop, write `plan = plan.append(item)`.
+3. `run(root)` inserts nothing into `root`. An element from `Plan.create` reaches the DOM only through `append` (`Plan.all('ul').append(Plan.create('li')).run(document)`), or through your own code inside `tap`.
+4. After `remove()`, the plan still holds the removed elements. `end()` goes back to the set before the last select step: after `Plan.all('ul').find('li').remove().end()`, the plan holds the `ul` again. To change other elements after a removal, use `also`: `Plan.from(btn).closest('li').remove().also(count)`.
+
+### Where the state is kept
+
+The recommendation is to keep the state in the DOM: a class (`li.done`), a `data-` attribute, or the text. A handler then returns a plan that changes only the elements of its event. To show a count, read the DOM inside `tap`. Then there is no array of items and no `render` function. The complete example in the README does this.
 
 ### Select
 
@@ -34,10 +45,12 @@ A plan that is built and never run does nothing. TypeScript does not report this
 - `Plan.from(el)` selects `el` wherever it is: outside the root, and also after `el` is removed. To skip a removed element, add `filter(el => el.isConnected)`.
 - `closest` and `flatMap` can select elements outside the root.
 - `also` concatenates the steps, so an `end()` after `also(next)` can go back into the first plan.
-- `end()` goes back to the set of the previous select step, like jQuery `.end()`.
+- `end()` goes back to the set held before the last select step, like jQuery `.end()`.
 - `add(css)` takes a selector string only.
 
 There are no getters. To read a value, run a plan with no effects and read the returned elements. You can also read a value inside `tap`.
+
+There is no conditional effect. To act on some of the held elements, add a `filter` before the effect. The filter sees the changes of earlier effects: `tap(li => setQty(li, qtyOf(li) - 1)).filter(li => qtyOf(li) === 0).remove()`. Your own code inside `tap` can also decide, with an `if`.
 
 ### Do several things in one plan
 
@@ -46,8 +59,8 @@ There are no getters. To read a value, run a plan with no effects and read the r
 
 `Plan.all` selects again from the root, so it ignores the guard. This example keeps the guard for both parts:
 
-```ts
-const current = Plan.all('#forecast').filter(el => (el as HTMLElement).dataset.req === id)
+```js
+const current = Plan.all('#forecast').filter(el => el.dataset.req === id)
 current.find('.days').setText('').end().find('.place').setText(place).run(document)
 ```
 
@@ -88,7 +101,7 @@ Differences from jQuery's `.on` and `.off`. These forms are not supported. Event
 - An omitted trailing argument of `off` matches any, and a trailing `undefined` is the same as omitting it. `undefined` before a given argument, and `null` anywhere, are not part of the contract.
 - The TypeScript types are the contract. `null` is not a selector: write `on(event, handler)` for a direct binding. An untyped call with a wrong argument shape (for example a `data` object before the handler) can fail later, when the event fires.
 
-```ts
+```js
 Plan.all('.todoapp')
   .on('click', '.delete', (_e, btn) => Plan.from(btn).closest('li').remove()) // delegated
   .on('click', (_e, el) => Plan.from(el).addClass('touched')) // direct, on .todoapp itself
@@ -97,6 +110,7 @@ Plan.all('.todoapp')
 
 - A plan with `on` that runs twice binds twice. Run it once, or call `off` first.
 - To call `off` later, keep the bound element (`Plan.from(el).off(...)`). A selector that runs again can miss an element that was removed or changed.
+- A delegated handler runs once for each element that matches the selector on the path from the target to the bound element. When a container and a button inside it both match `.add`, one click runs the handler twice.
 - A delegated binding never matches the element that it is bound on. To handle events on that element, use a direct binding: `on(event, handler)` without a selector.
 - Handlers for inner elements run first. `stopPropagation()` stops the outer levels.
 - `stopImmediatePropagation()` does not stop other handlers at the same level.
@@ -107,7 +121,15 @@ Plan.all('.todoapp')
 - If a handler throws, the remaining handlers of that bound element are not called for this event. The listeners of other elements still run.
 - A handler cannot return `false` (TypeScript rejects it). To stop the default action, call `e.preventDefault()`.
 
+## Tests for code that uses dom-plan
+
+1. Dispatch an event with the native method (`el.click()`, `form.requestSubmit()`), or with `dispatchEvent(new Event('change', { bubbles: true }))`. A delegated binding sees only an event that bubbles.
+2. A plan that a handler returns runs in a microtask. Wait one microtask before you read the DOM: `await null`.
+3. In Node.js, `dist/index.js` reads the global `Node`, which Node.js does not define. Set the globals from a jsdom window before the first `run`: `const { window } = new JSDOM(html); Object.assign(globalThis, { document: window.document, Node: window.Node, Event: window.Event })`. A browser with Playwright needs no setup.
+
 ## Rules for changes to this repository
+
+This section is about the repository. The installed package has no `src/`, `test/` or `docs/`.
 
 1. Do not add a method named `then` to `Plan`. A `then` method makes every plan a thenable, and `await plan` never settles.
 2. Keep `Plan` with one field: the array of steps.
