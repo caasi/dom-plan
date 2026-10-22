@@ -1,6 +1,6 @@
 {
   "name": "@caasi/dom-plan",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A lazy, monadic, jQuery-inspired layer for the DOM",
   "keywords": [
     "dom",

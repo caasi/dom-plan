@@ -24,5 +24,3 @@ Work that is planned but not done. Known limits and open questions are in `known
 - **Batch reads before writes (layout thrashing).** A common complaint about jQuery is that a chain mixes reads and writes, so the browser computes the layout again and again. The same selector is also queried again at each use. A plan is a complete array of steps before `run`, so `run` can see all reads and writes before it does any of them. jQuery runs each call at once and cannot do this. Today `exec` runs the steps in the written order, and a plan queries again at each `run`. This conflicts with D26 (no composition of effect order), so it needs a new decision first. It also conflicts with `Plan.gen` (above).
 
 - **A test with agents.** The name `Plan` was chosen so that agents remember to call `run` (D19). This is a claim about behavior. To test it, give agents a task that uses dom-plan, across model tiers, and count the plans that are never run.
-
-- **The README in the 0.1.0 package is old.** It says that the package is not on npm. The next release corrects it. A release only for this change is not necessary.
