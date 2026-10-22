@@ -20,11 +20,11 @@ The design record is `docs/000-design.md`. Known limits are in `docs/known-issue
 ### Run the plan
 
 1. End each plan that must change the DOM with `.run(root)`.
-2. If a handler returns a plan, do not call `run` on it. The plan runs in a microtask, with the element that `on` bound as `root`.
+2. If a handler returns a plan, do not call `run` on it. The plan runs in a microtask, with the element that `on` bound as `root`. A handler can also return nothing.
 
 In a plan that a handler returns, `Plan.all` and `add` select only under the bound element. `Plan.all('#elsewhere')` outside it selects nothing, and nothing reports it. `Plan.all` never selects the bound element itself. To change it, start the plan with `Plan.from(e.currentTarget as Element)` inside the handler. In JavaScript, leave out the cast.
 
-3. Do not write `$(...)`. Start a plan with `Plan.all`, `Plan.from`, `Plan.create`, or `Plan.none`.
+3. Do not write `$(...)`. Start a plan with `Plan.all`, `Plan.from`, `Plan.create`, or `Plan.none`. `Plan.none` is a plan, not a function: write `Plan.none`, not `Plan.none()`.
 
 A plan that is built and never run does nothing. TypeScript does not report this mistake.
 
@@ -48,7 +48,7 @@ The recommendation is to keep the state in the DOM: a class (`li.done`), a `data
 - `end()` goes back to the set held before the last select step, like jQuery `.end()`.
 - `add(css)` takes a selector string only.
 
-There are no getters. To read a value, run a plan with no effects and read the returned elements. You can also read a value inside `tap`.
+There are no getters. To read a value, run a plan with no effects and read the returned elements. You can also read a value inside `tap`. `filter` takes a function, not a selector: `filter(el => el.matches('.done'))`. HTML strings are not accepted; build elements with `Plan.create`.
 
 There is no conditional effect. To act on some of the held elements, add a `filter` before the effect. The filter sees the changes of earlier effects: `tap(li => setQty(li, qtyOf(li) - 1)).filter(li => qtyOf(li) === 0).remove()`. Your own code inside `tap` can also decide, with an `if`.
 
@@ -86,7 +86,7 @@ If the request starts in the handler and the promise is already settled, the res
 
 - `addClass('a b')` throws `InvalidCharacterError` at `run`. Use one class per call.
 - `append` uses `Element.append`. A node that is already in the document moves.
-- `append(child)` runs `child` with each target as the root.
+- `append(child)` runs `child` with each target as the root. So a child that starts with `Plan.all` searches inside the target, not the document. To move an element that is somewhere else, use `append(Plan.from(el))`.
 
 ### Events
 
